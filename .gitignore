@@ -1,0 +1,68 @@
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Model files and large binaries
+*.pt
+*.pth
+*.bin
+*.onnx
+*.model
+*.h5
+*.pb
+
+# Audio files (examples)
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.opus
+
+# Cache directories
+.cache/
+*.cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project specific
+examples/*.wav
+examples/*.mp3
+examples/*.m4a
+test_audio/
+output/
+transcriptions/

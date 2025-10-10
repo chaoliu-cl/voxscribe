@@ -1,0 +1,26 @@
+# Core transcription dependencies
+faster-whisper>=1.2.0
+numpy>=1.24.0
+soundfile>=0.12.0
+pydub>=0.25.1
+
+# GUI framework - PySide6 (Qt for Python)
+PySide6>=6.5.0
+
+# PyTorch for GPU detection and acceleration
+# For CPU-only:
+torch>=2.0.0
+
+# For CUDA 11.8 (NVIDIA GPU):
+# torch>=2.0.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+
+# For CUDA 12.1 (NVIDIA GPU):
+# torch>=2.0.0+cu121 --index-url https://download.pytorch.org/whl/cu121
+
+# Analysis and visualization dependencies
+pandas>=2.0.0
+matplotlib>=3.7.0
+
+# Optional: For better performance with large datasets
+# openpyxl>=3.1.0  # For Excel file support
+# scipy>=1.10.0    # For advanced statistics
