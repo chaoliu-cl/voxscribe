@@ -5,7 +5,7 @@
 VoxScribe is a powerful desktop application that combines state-of-the-art audio transcription with comprehensive qualitative coding and analysis features. Built with faster-whisper for accurate transcription and PySide6 for a modern GUI, it's designed for researchers, journalists, and anyone working with audio data and qualitative analysis.
 
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 ## ✨ Features
@@ -59,7 +59,7 @@ VoxScribe is a powerful desktop application that combines state-of-the-art audio
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/chaoliu/voxscribe.git
+git clone https://github.com/chaoliu-cl/voxscribe.git
 cd voxscribe
 ```
 
@@ -381,7 +381,7 @@ Contributions are welcome! Here's how to get started:
 ### Development Setup
 
 ```bash
-git clone https://github.com/chaoliu/voxscribe.git
+git clone https://github.com/chaoliu-cl/voxscribe.git
 cd voxscribe
 python -m venv venv
 source venv/bin/activate  # or venv\Scripts\activate on Windows
@@ -398,30 +398,29 @@ pip install -e .  # Install in development mode
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
 
 ```
-MIT License
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
-Copyright (c) 2025 Chao Liu
+### Key Terms
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+- **Free to use** for commercial and non-commercial purposes
+- **Modification allowed** with proper attribution
+- **Patent grant** included (protection for contributors)
+- **Trademark protection** - logo/name require permission
+- **Liability disclaimer** - provided "as is"
 ```
 
 ## 👤 Author
@@ -430,7 +429,7 @@ SOFTWARE.
 
 - Email: chaoliu@cedarville.edu
 - Institution: Cedarville University
-- GitHub: @chaoliu
+- GitHub: @chaoliu-cl
 
 ## 🙏 Acknowledgments
 
@@ -449,7 +448,7 @@ If you use VoxScribe in your research, please cite:
   author = {Liu, Chao},
   title = {VoxScribe: Audio Transcription and Qualitative Analysis Tool},
   year = {2025},
-  url = {https://github.com/chaoliu/voxscribe}
+  url = {https://github.com/chaoliu-cl/voxscribe}
 }
 ```
 
@@ -472,8 +471,8 @@ If you use VoxScribe in your research, please cite:
 
 ## 💬 Support
 
-- **Issues**: [GitHub Issues](https://github.com/chaoliu/voxscribe/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/chaoliu/voxscribe/discussions)
+- **Issues**: [GitHub Issues](https://github.com/chaoliu-cl/voxscribe/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/chaoliu-cl/voxscribe/discussions)
 - **Email**: chaoliu@cedarville.edu
 
 ---
