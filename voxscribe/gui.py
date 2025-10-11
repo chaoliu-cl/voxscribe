@@ -50,55 +50,112 @@ try:
     from .annotator import TextAnnotator
     from .utils import validate_audio_file, format_time, get_audio_duration
 except ImportError:
-    class AudioTranscriber:
-        def __init__(self, device="auto", compute_type="auto"):
-            self.device = device
-            self.compute_type = compute_type
-            self.model = None
-            self.model_size = None
-        
-        def get_device_info(self):
-            return {"device": self.device, "compute_type": self.compute_type}
-        
-        def load_model(self):
-            pass
-        
-        def change_model(self, size):
-            self.model_size = size
-        
-        def transcribe_batch(self, audio_paths, **kwargs):
-            # Dummy implementation
-            import time
-            results = []
-            for path in audio_paths:
+    # Try absolute imports
+    try:
+        from transcriber import AudioTranscriber
+        from annotator import TextAnnotator
+        from utils import validate_audio_file, format_time, get_audio_duration
+    except ImportError:
+        # Define dummy classes if imports fail
+        class AudioTranscriber:
+            def __init__(self, device="auto", compute_type="auto", model_size="base"):
+                self.device = device
+                self.compute_type = compute_type
+                self.model = None
+                self.model_size = model_size
+            
+            def get_device_info(self):
+                return {"device": self.device, "compute_type": self.compute_type}
+            
+            def load_model(self):
+                print("Dummy load_model called")
+                pass
+            
+            def change_model(self, size, device=None, compute_type=None):
+                self.model_size = size
+                if device:
+                    self.device = device
+                if compute_type:
+                    self.compute_type = compute_type
+                print(f"Dummy change_model called: {size}")
+            
+            def transcribe(self, audio_path, language=None, beam_size=5, 
+                          vad_filter=True, include_timestamps=True, 
+                          word_timestamps=False, progress_callback=None):
+                """Dummy transcribe method for single file"""
+                import time
+                
+                # Simulate processing
+                if progress_callback:
+                    progress_callback(1)
                 time.sleep(0.5)
-                results.append({
-                    'path': path,
-                    'filename': os.path.basename(path),
-                    'success': True,
-                    'results': [{'text': 'Sample text', 'id': 0}],
-                    'segments_count': 1,
-                    'processing_time': 0.5,
-                    'error': None
-                })
-                if kwargs.get('batch_progress_callback'):
-                    kwargs['batch_progress_callback'](len(results), len(audio_paths), os.path.basename(path))
-            return results
-    
-    class TextAnnotator:
-        def __init__(self):
-            pass
-    
-    def validate_audio_file(path):
-        return (True, "Valid")
-    
-    def format_time(seconds):
-        mins = int(seconds // 60)
-        secs = int(seconds % 60)
-        return f"{mins:02d}:{secs:02d}"
-    
-    def get_audio_duration(path):
-        return 0
+                
+                # Return dummy results
+                return [
+                    {
+                        'text': f'Dummy transcription for {os.path.basename(audio_path)}',
+                        'id': 0,
+                        'start': 0.0 if include_timestamps else None,
+                        'end': 1.0 if include_timestamps else None
+                    },
+                    {
+                        'text': 'This is a placeholder result. Install faster-whisper for real transcription.',
+                        'id': 1,
+                        'start': 1.0 if include_timestamps else None,
+                        'end': 2.0 if include_timestamps else None
+                    }
+                ]
+            
+            def transcribe_batch(self, audio_paths, language=None, beam_size=5,
+                               vad_filter=True, include_timestamps=True,
+                               word_timestamps=False, batch_progress_callback=None,
+                               **kwargs):
+                """Dummy batch transcribe method"""
+                import time
+                results = []
+                
+                for i, path in enumerate(audio_paths):
+                    time.sleep(0.5)
+                    
+                    result_data = self.transcribe(
+                        path, language, beam_size, vad_filter, 
+                        include_timestamps, word_timestamps
+                    )
+                    
+                    results.append({
+                        'path': path,
+                        'filename': os.path.basename(path),
+                        'success': True,
+                        'results': result_data,
+                        'segments_count': len(result_data),
+                        'processing_time': 0.5,
+                        'error': None
+                    })
+                    
+                    if batch_progress_callback:
+                        batch_progress_callback(i + 1, len(audio_paths), os.path.basename(path))
+                
+                return results
+        
+        class TextAnnotator:
+            def __init__(self):
+                pass
+        
+        def validate_audio_file(path):
+            """Dummy validation"""
+            return (True, "Valid (dummy validation)")
+        
+        def format_time(seconds):
+            """Format seconds to MM:SS"""
+            mins = int(seconds // 60)
+            secs = int(seconds % 60)
+            return f"{mins:02d}:{secs:02d}"
+        
+        def get_audio_duration(path):
+            """Dummy duration"""
+            return 0
+        
+        print("Warning: Using dummy classes. Install faster-whisper for actual transcription.")
 
 
 class CodeMemo:
@@ -403,9 +460,12 @@ class TranscriptionWorker(QThread):
         try:
             self.progress.emit(5, "Loading model...")
             
-            if self.transcriber.model_size != self.model_size:
+            # Always ensure model is loaded properly
+            if self.transcriber.model is None or self.transcriber.model_size != self.model_size:
                 self.transcriber.change_model(self.model_size)
-            elif self.transcriber.model is None:
+            
+            # Verify model is loaded
+            if self.transcriber.model is None:
                 self.transcriber.load_model()
             
             self.progress.emit(10, "Model loaded, starting transcription...")
@@ -413,38 +473,19 @@ class TranscriptionWorker(QThread):
             duration = get_audio_duration(self.audio_path)
             results = []
             
-            segment_generator = self.transcriber.model.transcribe(
+            # Use the transcriber's transcribe method instead of direct model access
+            result = self.transcriber.transcribe(
                 self.audio_path,
-                language=self.language if self.language != "auto" else None
+                language=self.language if self.language != "auto" else None,
+                include_timestamps=self.include_timestamps,
+                progress_callback=lambda count: self.progress.emit(
+                    min(95, 10 + int((count / max(1, duration if duration else count)) * 85)),
+                    f"Transcribing... ({count} segments)"
+                )
             )
             
-            segments_iter, info = segment_generator
-            
-            for segment in segments_iter:
-                segment_dict = {
-                    'text': segment.text.strip(),
-                    'id': segment.id
-                }
-                
-                if self.include_timestamps:
-                    segment_dict['start'] = segment.start
-                    segment_dict['end'] = segment.end
-                    
-                    if duration and duration > 0:
-                        progress_pct = int(10 + (segment.end / duration) * 85)
-                        progress_pct = min(95, progress_pct)
-                        self.progress.emit(progress_pct, f"Transcribing... ({format_time(segment.end)})")
-                    else:
-                        progress_pct = int(10 + min(85, len(results) * 2))
-                        self.progress.emit(progress_pct, f"Transcribing... ({len(results)} segments)")
-                else:
-                    progress_pct = int(10 + min(85, len(results) * 2))
-                    self.progress.emit(progress_pct, f"Transcribing... ({len(results)} segments)")
-                
-                results.append(segment_dict)
-            
-            self.progress.emit(100, f"Complete! {len(results)} segments transcribed")
-            self.finished.emit(results)
+            self.progress.emit(100, f"Complete! {len(result)} segments transcribed")
+            self.finished.emit(result)
             
         except Exception as e:
             self.error.emit(str(e))
