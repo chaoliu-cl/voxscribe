@@ -25,6 +25,15 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
+    - name: Verify package structure
+      run: |
+        echo "=== Package Structure ==="
+        ls -la
+        echo ""
+        echo "=== Python Files ==="
+        find . -name "*.py" -type f | head -20
+      shell: bash
+    
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
@@ -71,9 +80,19 @@ jobs:
         # Analysis dependencies
         pip install numpy pandas matplotlib networkx
     
+    - name: Add package to Python path
+      run: |
+        echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
+      shell: bash
+    
     - name: Install package in development mode
       run: |
-        pip install -e .
+        if [ -f "setup.py" ] || [ -f "pyproject.toml" ]; then
+          pip install -e .
+        else
+          echo "No setup.py or pyproject.toml found, using PYTHONPATH"
+        fi
+      shell: bash
       continue-on-error: true
     
     - name: Lint with flake8
@@ -107,14 +126,20 @@ jobs:
     
     - name: Test imports
       run: |
-        python -c "from transcriber import AudioTranscriber; print('✓ transcriber import OK')"
-        python -c "from annotator import TextAnnotator; print('✓ annotator import OK')"
-        python -c "from utils import format_time, validate_audio_file; print('✓ utils import OK')"
+        cd ${{ github.workspace }}
+        python -c "import sys; sys.path.insert(0, '.'); from transcriber import AudioTranscriber; print('✓ transcriber import OK')"
+        python -c "import sys; sys.path.insert(0, '.'); from annotator import TextAnnotator; print('✓ annotator import OK')"
+        python -c "import sys; sys.path.insert(0, '.'); from utils import format_time, validate_audio_file; print('✓ utils import OK')"
         python -c "print('✓ All core imports successful')"
+      shell: bash
     
     - name: Test basic functionality
       run: |
+        cd ${{ github.workspace }}
         python -c "
+        import sys
+        sys.path.insert(0, '.')
+        
         from transcriber import AudioTranscriber
         from annotator import TextAnnotator
         from utils import format_time
@@ -137,6 +162,7 @@ jobs:
         
         print('✓ All basic functionality tests passed')
         "
+      shell: bash
     
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4
@@ -191,6 +217,11 @@ jobs:
           libxcb-cursor0 \
           xvfb
     
+    - name: Add package to Python path
+      run: |
+        echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
+      shell: bash
+    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -201,8 +232,10 @@ jobs:
     - name: Test GUI imports (Linux with Xvfb)
       if: runner.os == 'Linux'
       run: |
+        cd ${{ github.workspace }}
         xvfb-run python -c "
         import sys
+        sys.path.insert(0, '.')
         from PySide6.QtWidgets import QApplication
         from gui import VoxScribeGUI
         app = QApplication(sys.argv)
@@ -210,12 +243,15 @@ jobs:
         print('✓ GUI initialization successful')
         app.quit()
         "
+      shell: bash
     
     - name: Test GUI imports (Windows/macOS)
       if: runner.os != 'Linux'
       run: |
+        cd ${{ github.workspace }}
         python -c "
         import sys
+        sys.path.insert(0, '.')
         from PySide6.QtWidgets import QApplication
         print('✓ PySide6 import successful')
         try:
@@ -225,6 +261,7 @@ jobs:
             print(f'! GUI initialization skipped (display not available): {e}')
         "
       continue-on-error: true
+      shell: bash
 
   integration-test:
     name: Integration Tests
@@ -243,6 +280,11 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libsndfile1 ffmpeg
+    
+    - name: Add package to Python path
+      run: |
+        echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
+      shell: bash
     
     - name: Install dependencies
       run: |
@@ -269,7 +311,11 @@ jobs:
     
     - name: Test transcription pipeline
       run: |
+        cd ${{ github.workspace }}
         python -c "
+        import sys
+        sys.path.insert(0, '.')
+        
         from transcriber import AudioTranscriber
         from annotator import TextAnnotator
         
@@ -297,6 +343,7 @@ jobs:
         print('✓ Full integration test passed')
         "
       timeout-minutes: 10
+      shell: bash
 
   security-scan:
     name: Security Scan
