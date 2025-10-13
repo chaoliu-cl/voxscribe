@@ -473,15 +473,39 @@ class TranscriptionWorker(QThread):
             duration = get_audio_duration(self.audio_path)
             results = []
             
-            # Use the transcriber's transcribe method instead of direct model access
+            # Define progress callback handler
+            def handle_progress(segment_count, end_time):
+                """
+                Handle progress updates from transcriber
+                
+                Args:
+                    segment_count: Number of segments processed
+                    end_time: End timestamp of current segment (seconds) or None
+                """
+                if end_time is not None and duration and duration > 0:
+                    # Time-based progress (accurate and smooth)
+                    progress_pct = int(10 + (end_time / duration) * 85)
+                    progress_pct = min(95, progress_pct)  # Cap at 95%
+                    self.progress.emit(
+                        progress_pct,
+                        f"Transcribing... ({format_time(end_time)} / {format_time(duration)})"
+                    )
+                else:
+                    # Count-based fallback (when timestamps unavailable)
+                    # Use incremental progress based on segment count
+                    progress_pct = int(10 + min(85, segment_count * 2))
+                    progress_pct = min(95, progress_pct)  # Cap at 95%
+                    self.progress.emit(
+                        progress_pct,
+                        f"Transcribing... ({segment_count} segments)"
+                    )
+            
+            # Use the transcriber's transcribe method with enhanced callback
             result = self.transcriber.transcribe(
                 self.audio_path,
                 language=self.language if self.language != "auto" else None,
                 include_timestamps=self.include_timestamps,
-                progress_callback=lambda count: self.progress.emit(
-                    min(95, 10 + int((count / max(1, duration if duration else count)) * 85)),
-                    f"Transcribing... ({count} segments)"
-                )
+                progress_callback=handle_progress  # ← NEW: Use named function
             )
             
             self.progress.emit(100, f"Complete! {len(result)} segments transcribed")

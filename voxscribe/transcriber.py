@@ -130,7 +130,7 @@ class AudioTranscriber:
         vad_filter: bool = True,
         include_timestamps: bool = True,
         word_timestamps: bool = False,
-        progress_callback: Optional[Callable[[int], None]] = None
+        progress_callback: Optional[Callable[[int, Optional[float]], None]] = None  # ← NEW
     ) -> List[Dict[str, any]]:
         """
         Transcribe audio file with optimizations
@@ -142,7 +142,7 @@ class AudioTranscriber:
             vad_filter: Use voice activity detection to filter out non-speech
             include_timestamps: Include segment-level timestamps (faster if disabled)
             word_timestamps: Include word-level timestamps (only if include_timestamps=True)
-            progress_callback: Optional callback function for progress updates
+            progress_callback: Optional callback(segment_count, end_time_or_none)  # ← UPDATED DOC
             
         Returns:
             List of segment dictionaries with text and optionally timestamps
@@ -224,7 +224,9 @@ class AudioTranscriber:
                 
                 # Call progress callback if provided
                 if progress_callback:
-                    progress_callback(segment_count)
+                    # Pass both segment count AND end timestamp (if available)
+                    end_time = segment.end if use_timestamps else None  # ← NEW
+                    progress_callback(segment_count, end_time)  # ← NEW: Passes count AND time
                 
                 if use_timestamps:
                     logger.debug(f"[{segment.start:.2f}s -> {segment.end:.2f}s] {segment.text}")
