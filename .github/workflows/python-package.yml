@@ -97,8 +97,8 @@ jobs:
     - name: Test imports
       run: |
         python -c "from voxscribe import AudioTranscriber, TextAnnotator"
-        python -c "import voxscribe; print(f'VoxScribe version: {voxscribe.__version__}')"
-        echo "Note: GUI import skipped in CI (requires display)"
+        python -c "import voxscribe; print('VoxScribe version: ' + voxscribe.__version__)"
+        echo "Note: GUI import tested separately"
       env:
         QT_QPA_PLATFORM: offscreen
 
