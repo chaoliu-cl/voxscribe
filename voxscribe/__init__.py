@@ -21,11 +21,25 @@ __author__ = "Chao Liu"
 
 from .transcriber import AudioTranscriber
 from .annotator import TextAnnotator
-from .gui import VoxScribeGUI, main
 
-__all__ = [
-    'AudioTranscriber',
-    'TextAnnotator',
-    'VoxScribeGUI',
-    'main'
-]
+# Try to import GUI components, but don't fail if display is not available
+try:
+    from .gui import VoxScribeGUI, main
+    __all__ = [
+        'AudioTranscriber',
+        'TextAnnotator',
+        'VoxScribeGUI',
+        'main'
+    ]
+except (ImportError, RuntimeError) as e:
+    # GUI not available (headless environment or missing dependencies)
+    import warnings
+    warnings.warn(
+        f"GUI components not available: {e}. "
+        "Core transcription and annotation features are still functional.",
+        ImportWarning
+    )
+    __all__ = [
+        'AudioTranscriber',
+        'TextAnnotator'
+    ]
