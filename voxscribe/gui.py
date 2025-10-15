@@ -18,6 +18,12 @@ VoxScribe GUI
 
 import sys
 import os
+
+# Add current directory to path if needed
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
 import json
 import re
 from typing import Optional, List, Dict, Any
@@ -26,6 +32,7 @@ from collections import Counter, defaultdict
 import csv
 from pathlib import Path
 
+# Import Qt modules first (these should always work)
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTextEdit, QLineEdit, QComboBox, QCheckBox,
@@ -44,19 +51,67 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 import networkx as nx
 
-# Placeholder imports
+# Now try to import local modules with better error reporting
+USING_DUMMY_CLASSES = False
+import_errors = []
+
+print("=" * 70)
+print("VOXSCRIBE IMPORT STATUS")
+print("=" * 70)
+
+# Try to import transcriber
 try:
-    from .transcriber import AudioTranscriber
-    from .annotator import TextAnnotator
-    from .utils import validate_audio_file, format_time, get_audio_duration
-except ImportError:
-    # Try absolute imports
+    print("Attempting to import transcriber module...")
+    from transcriber import AudioTranscriber
+    print("✓ Successfully imported AudioTranscriber from transcriber.py")
+except ImportError as e:
+    import_errors.append(f"transcriber: {e}")
+    print(f"✗ Failed to import transcriber: {e}")
+    USING_DUMMY_CLASSES = True
+
+# Try to import annotator
+try:
+    print("Attempting to import annotator module...")
+    from annotator import TextAnnotator
+    print("✓ Successfully imported TextAnnotator from annotator.py")
+except ImportError as e:
+    import_errors.append(f"annotator: {e}")
+    print(f"✗ Failed to import annotator: {e}")
+    USING_DUMMY_CLASSES = True
+
+# Try to import utils
+try:
+    print("Attempting to import utils module...")
+    from utils import validate_audio_file, format_time, get_audio_duration
+    print("✓ Successfully imported utils functions from utils.py")
+except ImportError as e:
+    import_errors.append(f"utils: {e}")
+    print(f"✗ Failed to import utils: {e}")
+    USING_DUMMY_CLASSES = True
+
+# If imports failed, define dummy classes
+if USING_DUMMY_CLASSES:
+    print("\n⚠️  Using dummy classes - some imports failed")
+    print(f"Current directory: {os.getcwd()}")
+    print(f"Script location: {current_dir}")
+    print("\nImport errors:")
+    for error in import_errors:
+        print(f"  - {error}")
+    
+    # Check if faster-whisper is installed
+    print("\nChecking faster-whisper installation:")
     try:
-        from transcriber import AudioTranscriber
-        from annotator import TextAnnotator
-        from utils import validate_audio_file, format_time, get_audio_duration
+        import faster_whisper
+        print(f"✓ faster-whisper IS installed (version: {getattr(faster_whisper, '__version__', 'unknown')})")
+        print("  → Problem is likely with local module files (transcriber.py, etc.)")
     except ImportError:
-        # Define dummy classes if imports fail
+        print("✗ faster-whisper is NOT installed")
+        print("  → Install with: pip install faster-whisper")
+    
+    print("\n" + "=" * 70)
+    
+    # Define dummy classes ONLY if needed
+    if 'AudioTranscriber' not in dir():
         class AudioTranscriber:
             def __init__(self, device="auto", compute_type="auto", model_size="base"):
                 self.device = device
@@ -68,7 +123,6 @@ except ImportError:
                 return {"device": self.device, "compute_type": self.compute_type}
             
             def load_model(self):
-                print("Dummy load_model called")
                 pass
             
             def change_model(self, size, device=None, compute_type=None):
@@ -77,32 +131,34 @@ except ImportError:
                     self.device = device
                 if compute_type:
                     self.compute_type = compute_type
-                print(f"Dummy change_model called: {size}")
             
             def transcribe(self, audio_path, language=None, beam_size=5, 
                           vad_filter=True, include_timestamps=True, 
                           word_timestamps=False, progress_callback=None):
-                """Dummy transcribe method for single file"""
+                """Dummy transcribe - FIXED signature"""
                 import time
                 
-                # Simulate processing
                 if progress_callback:
-                    progress_callback(1)
-                time.sleep(0.5)
+                    progress_callback(0, 0.0)
                 
-                # Return dummy results
+                time.sleep(0.3)
+                
+                if progress_callback:
+                    progress_callback(1, 0.5)
+                    progress_callback(2, 1.0)
+                
                 return [
                     {
-                        'text': f'Dummy transcription for {os.path.basename(audio_path)}',
+                        'text': f'[DUMMY] Transcription for {os.path.basename(audio_path)}',
                         'id': 0,
                         'start': 0.0 if include_timestamps else None,
-                        'end': 1.0 if include_timestamps else None
+                        'end': 0.5 if include_timestamps else None
                     },
                     {
-                        'text': 'This is a placeholder result. Install faster-whisper for real transcription.',
+                        'text': '[DUMMY] Install faster-whisper and ensure transcriber.py is in the same directory.',
                         'id': 1,
-                        'start': 1.0 if include_timestamps else None,
-                        'end': 2.0 if include_timestamps else None
+                        'start': 0.5 if include_timestamps else None,
+                        'end': 1.0 if include_timestamps else None
                     }
                 ]
             
@@ -110,52 +166,57 @@ except ImportError:
                                vad_filter=True, include_timestamps=True,
                                word_timestamps=False, batch_progress_callback=None,
                                **kwargs):
-                """Dummy batch transcribe method"""
+                """Dummy batch transcribe"""
                 import time
                 results = []
                 
                 for i, path in enumerate(audio_paths):
-                    time.sleep(0.5)
-                    
-                    result_data = self.transcribe(
-                        path, language, beam_size, vad_filter, 
-                        include_timestamps, word_timestamps
-                    )
-                    
+                    time.sleep(0.3)
+                    result_data = self.transcribe(path, language, beam_size, vad_filter, 
+                                                  include_timestamps, word_timestamps)
                     results.append({
                         'path': path,
                         'filename': os.path.basename(path),
                         'success': True,
                         'results': result_data,
                         'segments_count': len(result_data),
-                        'processing_time': 0.5,
+                        'processing_time': 0.3,
                         'error': None
                     })
-                    
                     if batch_progress_callback:
                         batch_progress_callback(i + 1, len(audio_paths), os.path.basename(path))
                 
                 return results
-        
+    
+    if 'TextAnnotator' not in dir():
         class TextAnnotator:
             def __init__(self):
-                pass
-        
+                self.segments = []
+                self.annotations = {}
+                self.history = []
+            
+            def load_segments(self, segments):
+                self.segments = segments
+    
+    if 'validate_audio_file' not in dir():
         def validate_audio_file(path):
-            """Dummy validation"""
             return (True, "Valid (dummy validation)")
-        
+    
+    if 'format_time' not in dir():
         def format_time(seconds):
-            """Format seconds to MM:SS"""
+            if seconds is None:
+                return "00:00"
             mins = int(seconds // 60)
             secs = int(seconds % 60)
             return f"{mins:02d}:{secs:02d}"
-        
+    
+    if 'get_audio_duration' not in dir():
         def get_audio_duration(path):
-            """Dummy duration"""
-            return 0
-        
-        print("Warning: Using dummy classes. Install faster-whisper for actual transcription.")
+            return 60.0
+
+else:
+    print("\n✓ All modules imported successfully!")
+    print("=" * 70 + "\n")
 
 
 class CodeMemo:
@@ -443,7 +504,7 @@ class AnnotationManager:
 
 
 class TranscriptionWorker(QThread):
-    """Background worker for single file transcription"""
+    """Background worker for single file transcription - FIXED"""
     finished = Signal(list)
     error = Signal(str)
     progress = Signal(int, str)
@@ -473,7 +534,7 @@ class TranscriptionWorker(QThread):
             duration = get_audio_duration(self.audio_path)
             results = []
             
-            # Define progress callback handler
+            # Define progress callback handler - FIXED SIGNATURE
             def handle_progress(segment_count, end_time):
                 """
                 Handle progress updates from transcriber
@@ -482,6 +543,7 @@ class TranscriptionWorker(QThread):
                     segment_count: Number of segments processed
                     end_time: End timestamp of current segment (seconds) or None
                 """
+                # Ensure we handle None values gracefully
                 if end_time is not None and duration and duration > 0:
                     # Time-based progress (accurate and smooth)
                     progress_pct = int(10 + (end_time / duration) * 85)
@@ -505,14 +567,16 @@ class TranscriptionWorker(QThread):
                 self.audio_path,
                 language=self.language if self.language != "auto" else None,
                 include_timestamps=self.include_timestamps,
-                progress_callback=handle_progress  # ← NEW: Use named function
+                progress_callback=handle_progress
             )
             
             self.progress.emit(100, f"Complete! {len(result)} segments transcribed")
             self.finished.emit(result)
             
         except Exception as e:
-            self.error.emit(str(e))
+            import traceback
+            error_details = f"{str(e)}\n\n{traceback.format_exc()}"
+            self.error.emit(error_details)
 
 
 class BatchTranscriptionWorker(QThread):
