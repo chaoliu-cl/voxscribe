@@ -130,7 +130,7 @@ class AudioTranscriber:
         vad_filter: bool = True,
         include_timestamps: bool = True,
         word_timestamps: bool = False,
-        progress_callback: Optional[Callable[[int, Optional[float]], None]] = None  # ← NEW
+        progress_callback: Optional[Callable[[int, Optional[float], Optional[float], Optional[float]], None]] = None
     ) -> List[Dict[str, any]]:
         """
         Transcribe audio file with optimizations
@@ -142,7 +142,11 @@ class AudioTranscriber:
             vad_filter: Use voice activity detection to filter out non-speech
             include_timestamps: Include segment-level timestamps (faster if disabled)
             word_timestamps: Include word-level timestamps (only if include_timestamps=True)
-            progress_callback: Optional callback(segment_count, end_time_or_none)  # ← UPDATED DOC
+            progress_callback: Optional callback(segment_count, processed_duration, total_duration, elapsed_time)
+                - segment_count: Number of segments processed so far
+                - processed_duration: Audio duration processed in seconds (or None)
+                - total_duration: Total audio duration in seconds (or None)
+                - elapsed_time: Time elapsed since start in seconds
             
         Returns:
             List of segment dictionaries with text and optionally timestamps
@@ -152,6 +156,19 @@ class AudioTranscriber:
         
         try:
             logger.info(f"Transcribing: {audio_path}")
+            
+            # Get total audio duration for progress tracking
+            import soundfile as sf
+            total_duration = None
+            try:
+                with sf.SoundFile(audio_path) as audio_file:
+                    total_duration = len(audio_file) / audio_file.samplerate
+                    logger.info(f"Audio duration: {total_duration:.2f} seconds")
+            except Exception as e:
+                logger.warning(f"Could not determine audio duration: {e}")
+            
+            # Start timing
+            start_time = time.time()
             
             # Optimize beam_size for speed (5 is good balance, 1 is fastest)
             optimal_beam_size = min(beam_size, 5)
@@ -224,9 +241,14 @@ class AudioTranscriber:
                 
                 # Call progress callback if provided
                 if progress_callback:
-                    # Pass both segment count AND end timestamp (if available)
-                    end_time = segment.end if use_timestamps else None  # ← NEW
-                    progress_callback(segment_count, end_time)  # ← NEW: Passes count AND time
+                    # Calculate elapsed time
+                    elapsed_time = time.time() - start_time
+                    
+                    # Get processed duration (end timestamp of current segment)
+                    processed_duration = segment.end if use_timestamps else None
+                    
+                    # Pass: segment_count, processed_duration, total_duration, elapsed_time
+                    progress_callback(segment_count, processed_duration, total_duration, elapsed_time)
                 
                 if use_timestamps:
                     logger.debug(f"[{segment.start:.2f}s -> {segment.end:.2f}s] {segment.text}")

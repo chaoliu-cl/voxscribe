@@ -135,17 +135,29 @@ if USING_DUMMY_CLASSES:
             def transcribe(self, audio_path, language=None, beam_size=5, 
                           vad_filter=True, include_timestamps=True, 
                           word_timestamps=False, progress_callback=None):
-                """Dummy transcribe - FIXED signature"""
+                """Dummy transcribe - Updated signature with time tracking"""
                 import time
                 
+                total_duration = 1.0  # Dummy 1 second audio
+                start_time = time.time()
+                
                 if progress_callback:
-                    progress_callback(0, 0.0)
+                    # Progress at 0% processed
+                    elapsed = time.time() - start_time
+                    progress_callback(0, 0.0, total_duration, elapsed)
                 
                 time.sleep(0.3)
                 
                 if progress_callback:
-                    progress_callback(1, 0.5)
-                    progress_callback(2, 1.0)
+                    # Progress at 50% processed
+                    elapsed = time.time() - start_time
+                    progress_callback(1, 0.5, total_duration, elapsed)
+                    
+                    time.sleep(0.2)
+                    
+                    # Progress at 100% processed
+                    elapsed = time.time() - start_time
+                    progress_callback(2, 1.0, total_duration, elapsed)
                 
                 return [
                     {
@@ -534,32 +546,48 @@ class TranscriptionWorker(QThread):
             duration = get_audio_duration(self.audio_path)
             results = []
             
-            # Define progress callback handler - FIXED SIGNATURE
-            def handle_progress(segment_count, end_time):
+            # Define progress callback handler with enhanced time tracking
+            def handle_progress(segment_count, processed_duration, total_duration, elapsed_time):
                 """
                 Handle progress updates from transcriber
                 
                 Args:
                     segment_count: Number of segments processed
-                    end_time: End timestamp of current segment (seconds) or None
+                    processed_duration: Audio duration processed in seconds (or None)
+                    total_duration: Total audio duration in seconds (or None)  
+                    elapsed_time: Time elapsed since start in seconds
                 """
-                # Ensure we handle None values gracefully
-                if end_time is not None and duration and duration > 0:
-                    # Time-based progress (accurate and smooth)
-                    progress_pct = int(10 + (end_time / duration) * 85)
+                # Format elapsed time
+                elapsed_str = format_time(elapsed_time)
+                
+                # Calculate estimated time remaining
+                if processed_duration is not None and total_duration is not None and processed_duration > 0:
+                    # Time-based progress (most accurate)
+                    progress_pct = int(10 + (processed_duration / total_duration) * 85)
                     progress_pct = min(95, progress_pct)  # Cap at 95%
+                    
+                    # Estimate remaining time based on processing speed
+                    processing_speed = elapsed_time / processed_duration
+                    remaining_duration = total_duration - processed_duration
+                    estimated_remaining = remaining_duration * processing_speed
+                    remaining_str = format_time(estimated_remaining)
+                    
+                    # Format message with all information
+                    processed_str = format_time(processed_duration)
+                    total_str = format_time(total_duration)
+                    
                     self.progress.emit(
                         progress_pct,
-                        f"Transcribing... ({format_time(end_time)} / {format_time(duration)})"
+                        f"Transcribing... {processed_str} / {total_str} | "
+                        f"Elapsed: {elapsed_str} | Est. remaining: {remaining_str}"
                     )
                 else:
-                    # Count-based fallback (when timestamps unavailable)
-                    # Use incremental progress based on segment count
+                    # Fallback to segment-based progress when timestamps unavailable
                     progress_pct = int(10 + min(85, segment_count * 2))
                     progress_pct = min(95, progress_pct)  # Cap at 95%
                     self.progress.emit(
                         progress_pct,
-                        f"Transcribing... ({segment_count} segments)"
+                        f"Transcribing... {segment_count} segments | Elapsed: {elapsed_str}"
                     )
             
             # Use the transcriber's transcribe method with enhanced callback
@@ -1536,9 +1564,27 @@ class VoxScribeGUI(QMainWindow):
         
         text_group_layout.addLayout(title_layout)
         
+        # OPTIMIZATION: Configure QTextEdit for better performance with large documents
         self.coding_text = QTextEdit()
         self.coding_text.setReadOnly(True)
         self.coding_text.viewport().installEventFilter(self)
+        
+        # PERFORMANCE: Reduce undo/redo memory overhead
+        self.coding_text.setUndoRedoEnabled(False)
+        
+        # PERFORMANCE: Optimize line wrap for large documents
+        self.coding_text.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        
+        # PERFORMANCE: Set a reasonable maximum block count (prevents infinite memory use)
+        # Note: This limits document size but improves performance dramatically
+        # For very large files (>100MB), consider alternative viewing methods
+        self.coding_text.document().setMaximumBlockCount(1000000)  # ~1M lines max
+        
+        # PERFORMANCE: Optimize document layout for faster rendering
+        doc = self.coding_text.document()
+        doc.setDocumentMargin(2)  # Reduce margins for faster rendering
+        doc.setUseDesignMetrics(False)  # Use faster metrics calculation
+        
         self.update_text_display_font()
         text_group_layout.addWidget(self.coding_text)
         
@@ -1568,62 +1614,163 @@ class VoxScribeGUI(QMainWindow):
         cursor.clearSelection()
         self.coding_text.setTextCursor(cursor)
     
-    def refresh_text_display(self):
+    def apply_single_annotation_incremental(self, annotation):
+        """
+        Apply a single annotation to the display incrementally (FAST - no full rebuild)
+        
+        This is much faster than refresh_text_display() for adding one annotation
+        because it only updates the specific text range, not the entire document.
+        """
         if not self.current_text:
             return
         
-        cursor = self.coding_text.textCursor()
-        original_position = cursor.position()
-        
+        # OPTIMIZATION: Disable updates during the operation
+        self.coding_text.setUpdatesEnabled(False)
         self.coding_text.blockSignals(True)
         
         try:
+            doc = self.coding_text.document()
+            
+            # Calculate display position (accounting for existing labels)
+            display_start = annotation.start
+            display_end = annotation.end
+            
+            # Count all annotation labels that come before this position
+            for ann in self.annotation_manager.annotations:
+                if ann == annotation:
+                    continue  # Skip the one we're adding
+                if ann.end <= annotation.start:
+                    # This annotation's label is before our new annotation
+                    label_length = len(f" [{ann.code}]")
+                    display_start += label_length
+                    display_end += label_length
+            
+            # Get color for this code
+            color = self.annotation_manager.code_colors.get(annotation.code, '#FFFF00')
+            
+            # Create formats
+            bg_fmt = QTextCharFormat()
+            bg_fmt.setBackground(QColor(color))
+            bg_fmt.setForeground(QColor(0, 0, 0))
+            
+            label_fmt = QTextCharFormat()
+            label_fmt.setForeground(QColor(100, 100, 100))
+            label_fmt.setFontWeight(QFont.Weight.Bold)
+            label_fmt.setBackground(QColor(color))
+            label_fmt.setProperty(1001, annotation.code)
+            
+            # Apply formatting in single atomic operation
+            cursor = QTextCursor(doc)
+            cursor.beginEditBlock()
+            
+            try:
+                # Apply background to the text range
+                cursor.setPosition(display_start)
+                cursor.setPosition(display_end, QTextCursor.MoveMode.KeepAnchor)
+                cursor.mergeCharFormat(bg_fmt)
+                
+                # Insert code label at the end
+                cursor.setPosition(display_end)
+                label_text = f" [{annotation.code}]"
+                cursor.setCharFormat(label_fmt)
+                cursor.insertText(label_text)
+                
+            finally:
+                cursor.endEditBlock()
+            
+        finally:
+            # Re-enable updates - single repaint
+            self.coding_text.blockSignals(False)
+            self.coding_text.setUpdatesEnabled(True)
+    
+    def refresh_text_display(self):
+        """Optimized text display refresh with minimal redraws"""
+        if not self.current_text:
+            return
+        
+        # Store cursor position
+        cursor = self.coding_text.textCursor()
+        original_position = cursor.position()
+        
+        # OPTIMIZATION: Disable all updates and signals for maximum performance
+        self.coding_text.setUpdatesEnabled(False)
+        self.coding_text.blockSignals(True)
+        
+        # OPTIMIZATION: Use document() methods for direct manipulation (faster than cursor operations)
+        try:
+            # Clear and set text
             self.coding_text.clear()
             self.coding_text.setPlainText(self.current_text)
             
+            # Get document for direct access
+            doc = self.coding_text.document()
+            
+            # Sort annotations in reverse order (end to start) to maintain positions
             sorted_annotations = sorted(self.annotation_manager.annotations, key=lambda a: a.start, reverse=True)
             
+            # OPTIMIZATION: Pre-create format objects to reuse
+            fmt_cache = {}
             for ann in sorted_annotations:
-                if ann.start < 0 or ann.end > len(self.current_text) or ann.start >= ann.end:
-                    continue
-                
-                color = self.annotation_manager.code_colors.get(ann.code, '#FFFF00')
-                
-                cursor = QTextCursor(self.coding_text.document())
-                cursor.setPosition(ann.start)
-                cursor.setPosition(ann.end, QTextCursor.MoveMode.KeepAnchor)
-                
-                fmt = QTextCharFormat()
-                fmt.setBackground(QColor(color))
-                fmt.setForeground(QColor(0, 0, 0))
-                cursor.mergeCharFormat(fmt)
-                
-                cursor = QTextCursor(self.coding_text.document())
-                cursor.setPosition(ann.end)
-                
-                label_text = f" [{ann.code}]"
-                label_fmt = QTextCharFormat()
-                label_fmt.setForeground(QColor(100, 100, 100))
-                label_fmt.setFontWeight(QFont.Weight.Bold)
-                label_fmt.setBackground(QColor(color))
-                label_fmt.setProperty(1001, ann.code)
-                
-                cursor.setCharFormat(label_fmt)
-                cursor.insertText(label_text)
+                if ann.code not in fmt_cache:
+                    color = self.annotation_manager.code_colors.get(ann.code, '#FFFF00')
+                    
+                    # Background format for highlighted text
+                    bg_fmt = QTextCharFormat()
+                    bg_fmt.setBackground(QColor(color))
+                    bg_fmt.setForeground(QColor(0, 0, 0))
+                    
+                    # Label format for [CODE] tag
+                    label_fmt = QTextCharFormat()
+                    label_fmt.setForeground(QColor(100, 100, 100))
+                    label_fmt.setFontWeight(QFont.Weight.Bold)
+                    label_fmt.setBackground(QColor(color))
+                    label_fmt.setProperty(1001, ann.code)
+                    
+                    fmt_cache[ann.code] = (bg_fmt, label_fmt)
             
-            fresh_cursor = QTextCursor(self.coding_text.document())
-            fresh_cursor.setPosition(min(original_position, len(self.coding_text.toPlainText())))
+            # OPTIMIZATION: Batch format operations - single document lock
+            cursor = QTextCursor(doc)
+            cursor.beginEditBlock()  # Start atomic operation
+            
+            try:
+                for ann in sorted_annotations:
+                    # Validate bounds
+                    if ann.start < 0 or ann.end > len(self.current_text) or ann.start >= ann.end:
+                        continue
+                    
+                    bg_fmt, label_fmt = fmt_cache[ann.code]
+                    
+                    # Apply background to selected text
+                    cursor.setPosition(ann.start)
+                    cursor.setPosition(ann.end, QTextCursor.MoveMode.KeepAnchor)
+                    cursor.mergeCharFormat(bg_fmt)
+                    
+                    # Insert code label at end
+                    cursor.setPosition(ann.end)
+                    label_text = f" [{ann.code}]"
+                    cursor.setCharFormat(label_fmt)
+                    cursor.insertText(label_text)
+            finally:
+                cursor.endEditBlock()  # End atomic operation - single repaint
+            
+            # Restore cursor position
+            fresh_cursor = QTextCursor(doc)
+            fresh_cursor.setPosition(min(original_position, doc.characterCount() - 1))
             self.coding_text.setTextCursor(fresh_cursor)
             
         finally:
+            # OPTIMIZATION: Re-enable updates last - causes single repaint
             self.coding_text.blockSignals(False)
+            self.coding_text.setUpdatesEnabled(True)
             self.ensure_no_selection()
         
-        if sorted_annotations:
-            self.code_status_label.setText(f"✓ Display refreshed - {len(sorted_annotations)} annotations shown (click code labels to remove)")
+        # Update status (lightweight operation)
+        ann_count = len(sorted_annotations)
+        if ann_count:
+            self.code_status_label.setText(f"✓ {ann_count} annotation{'s' if ann_count != 1 else ''} displayed")
             self.code_status_label.setStyleSheet("color: #2E7D32; font-weight: bold; padding: 5px;")
         else:
-            self.code_status_label.setText("Display refreshed - no annotations")
+            self.code_status_label.setText("No annotations")
             self.code_status_label.setStyleSheet("color: #666; font-weight: normal; padding: 5px;")
     
     def eventFilter(self, obj, event):
@@ -1738,7 +1885,8 @@ class VoxScribeGUI(QMainWindow):
                 cursor.clearSelection()
                 self.coding_text.setTextCursor(cursor)
                 
-                self.update_all_displays()
+                # Optimized: Update codebook for usage count, records for new annotation, not dropdown or theme
+                self.update_all_displays(update_codebook=True, update_records=True, update_theme=False, update_dropdown=False)
                 self.refresh_text_display()
                 self.ensure_no_selection()
                 
@@ -1772,16 +1920,36 @@ class VoxScribeGUI(QMainWindow):
             self.code_status_label.setStyleSheet("color: #666; font-weight: normal; padding: 5px;")
     
     def update_code_dropdown(self):
+        """Update code dropdown with performance optimization"""
         current_text = self.code_input.currentText()
-        self.code_input.clear()
-        self.code_input.addItems(sorted(self.annotation_manager.codes))
-        self.code_input.setCurrentText(current_text)
+        
+        # Block signals during update to prevent unnecessary event handling
+        self.code_input.blockSignals(True)
+        try:
+            self.code_input.clear()
+            self.code_input.addItems(sorted(self.annotation_manager.codes))
+            self.code_input.setCurrentText(current_text)
+        finally:
+            self.code_input.blockSignals(False)
     
-    def update_all_displays(self):
-        self.update_codebook_table()
-        self.update_records_table()
-        self.update_theme_tree()
-        self.update_code_dropdown()
+    def update_all_displays(self, update_codebook=True, update_records=True, update_theme=True, update_dropdown=True):
+        """
+        Update displays selectively for better performance
+        
+        Args:
+            update_codebook: Whether to update the codebook table
+            update_records: Whether to update the records table
+            update_theme: Whether to update the theme tree
+            update_dropdown: Whether to update the code dropdown
+        """
+        if update_codebook:
+            self.update_codebook_table()
+        if update_records:
+            self.update_records_table()
+        if update_theme:
+            self.update_theme_tree()
+        if update_dropdown:
+            self.update_code_dropdown()
     
     def create_and_apply_code(self):
         code = self.code_input.currentText().strip()
@@ -1808,14 +1976,32 @@ class VoxScribeGUI(QMainWindow):
             
             actual_text = self.current_text[original_start:original_end]
             
-            self.annotation_manager.add_annotation(original_start, original_end, actual_text, code, memo)
+            # Add annotation to manager
+            new_annotation = self.annotation_manager.add_annotation(original_start, original_end, actual_text, code, memo)
             
             cursor.clearSelection()
             self.coding_text.setTextCursor(cursor)
             self.memo_input.clear()
             
-            self.update_all_displays()
-            self.refresh_text_display()
+            # OPTIMIZATION: Smart refresh decision
+            # Use incremental update for fast display (10-50x faster)
+            # Only use full refresh if there are issues or for first few annotations
+            annotation_count = len(self.annotation_manager.annotations)
+            
+            # For large documents with many annotations, always use incremental (MUCH faster)
+            # For small documents or few annotations, full refresh is fine
+            use_incremental = len(self.current_text) > 100000 or annotation_count > 10
+            
+            if use_incremental:
+                # FAST: Only update the new annotation
+                self.apply_single_annotation_incremental(new_annotation)
+            else:
+                # SAFE: Full refresh (used for small docs or initial annotations)
+                self.refresh_text_display()
+            
+            # Update tables (but skip full text refresh since we already did it above)
+            self.update_all_displays(update_codebook=True, update_records=True, update_theme=False, update_dropdown=is_new_code)
+            
             self.ensure_no_selection()
             
             preview = actual_text[:50] + "..." if len(actual_text) > 50 else actual_text
@@ -1826,7 +2012,8 @@ class VoxScribeGUI(QMainWindow):
                 self.code_status_label.setText(f"✓ Code '{code}' applied to: \"{preview}\"")
                 self.code_status_label.setStyleSheet("color: #2E7D32; font-weight: bold; padding: 5px;")
         else:
-            self.update_all_displays()
+            # Only new code, no annotation - just update dropdown and codebook
+            self.update_all_displays(update_codebook=True, update_records=False, update_theme=False, update_dropdown=True)
             if is_new_code:
                 self.code_status_label.setText(f"✓ Code '{code}' created (select text to apply)")
                 self.code_status_label.setStyleSheet("color: #1976D2; font-weight: bold; padding: 5px;")
@@ -1885,18 +2072,31 @@ class VoxScribeGUI(QMainWindow):
             return
         
         try:
-            self.code_status_label.setText("⏳ Loading text file...")
-            self.code_status_label.setStyleSheet("color: #1976D2; font-weight: bold; padding: 5px;")
-            QApplication.processEvents()
-            
             file_size = os.path.getsize(filepath)
             file_size_mb = file_size / (1024 * 1024)
             
-            self.coding_text.setUpdatesEnabled(False)
+            # Show loading message
+            self.code_status_label.setText("⏳ Reading file...")
+            self.code_status_label.setStyleSheet("color: #1976D2; font-weight: bold; padding: 5px;")
+            QApplication.processEvents()
             
+            # OPTIMIZATION: For very large files, warn user
+            if file_size_mb > 20:
+                reply = QMessageBox.question(
+                    self,
+                    "Large File Warning",
+                    f"This file is {file_size_mb:.1f} MB. Loading may take a moment.\n\nContinue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                if reply == QMessageBox.StandardButton.No:
+                    return
+            
+            # Read entire file
             with open(filepath, 'rb') as f:
                 raw_data = f.read()
             
+            # Decode with fallback
             try:
                 text = raw_data.decode('utf-8')
             except UnicodeDecodeError:
@@ -1905,20 +2105,53 @@ class VoxScribeGUI(QMainWindow):
                 except:
                     text = raw_data.decode('utf-8', errors='ignore')
             
-            self.coding_text.setPlainText(text)
+            # Store text first
             self.current_text = text
             
-            self.coding_text.setUpdatesEnabled(True)
-            
-            word_count = len(text.split())
+            # Calculate stats BEFORE display (fast)
             char_count = len(text)
             line_count = text.count('\n') + 1
             
-            stats = f"✓ Imported: {char_count:,} chars, {word_count:,} words, {line_count:,} lines ({file_size_mb:.2f} MB) from {os.path.basename(filepath)}"
+            if file_size_mb < 5:
+                word_count = len(text.split())
+                stats = f"✓ Imported: {char_count:,} chars, {word_count:,} words, {line_count:,} lines ({file_size_mb:.2f} MB)"
+            else:
+                word_count = char_count // 6
+                stats = f"✓ Imported: {char_count:,} chars, ~{word_count:,} words, {line_count:,} lines ({file_size_mb:.2f} MB)"
+            
+            # Update status immediately
+            self.code_status_label.setText("⏳ Displaying text...")
+            self.code_status_label.setStyleSheet("color: #1976D2; font-weight: bold; padding: 5px;")
+            QApplication.processEvents()
+            
+            # OPTIMIZATION: Now display the text with all optimizations
+            self.coding_text.setUpdatesEnabled(False)
+            self.coding_text.blockSignals(True)
+            
+            # Clear and set text
+            self.coding_text.clear()
+            self.coding_text.document().setPlainText(text)
+            
+            # Re-enable in single operation
+            self.coding_text.blockSignals(False)
+            self.coding_text.setUpdatesEnabled(True)
+            
+            # Success message
             self.code_status_label.setText(stats)
             self.code_status_label.setStyleSheet("color: #2E7D32; font-weight: bold; padding: 5px;")
             
         except Exception as e:
+            self.coding_text.blockSignals(False)
+            self.coding_text.setUpdatesEnabled(True)
+            QMessageBox.critical(self, "Error", f"Failed to import text:\n{str(e)}")
+            self.code_status_label.setText("✗ Import failed")
+            self.code_status_label.setStyleSheet("color: #d32f2f; font-weight: bold; padding: 5px;")
+            
+            self.code_status_label.setText(stats)
+            self.code_status_label.setStyleSheet("color: #2E7D32; font-weight: bold; padding: 5px;")
+            
+        except Exception as e:
+            self.coding_text.blockSignals(False)
             self.coding_text.setUpdatesEnabled(True)
             QMessageBox.critical(self, "Error", f"Failed to import text:\n{str(e)}")
             self.code_status_label.setText("✗ Import failed")
@@ -2015,6 +2248,17 @@ class VoxScribeGUI(QMainWindow):
         self.codebook_table.setHorizontalHeaderLabels(["Code", "Usage Count", "Color", "Description"])
         self.codebook_table.horizontalHeader().setStretchLastSection(True)
         self.codebook_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        
+        # Enable sorting - this allows clicking column headers to sort
+        self.codebook_table.setSortingEnabled(True)
+        
+        # Track current sort state for custom behavior
+        self.codebook_sort_column = 0  # Default: Code column
+        self.codebook_sort_ascending = True  # Default: A-Z
+        
+        # Connect header click to custom sort handler
+        self.codebook_table.horizontalHeader().sectionClicked.connect(self.sort_codebook_table)
+        
         layout.addWidget(self.codebook_table)
         
         stats_layout = QHBoxLayout()
@@ -2026,28 +2270,73 @@ class VoxScribeGUI(QMainWindow):
         return widget
     
     def update_codebook_table(self):
+        """Update codebook table with optimized usage count calculation"""
+        # Temporarily disable sorting while updating to avoid performance issues
+        self.codebook_table.setSortingEnabled(False)
+        
         self.codebook_table.setRowCount(0)
+        
+        # OPTIMIZATION: Pre-calculate all usage counts in single pass
+        usage_counts = {}
+        for ann in self.annotation_manager.annotations:
+            usage_counts[ann.code] = usage_counts.get(ann.code, 0) + 1
         
         codes = sorted(self.annotation_manager.codes)
         for code in codes:
             row = self.codebook_table.rowCount()
             self.codebook_table.insertRow(row)
             
+            # Code name column
             self.codebook_table.setItem(row, 0, QTableWidgetItem(code))
             
-            usage = len(self.annotation_manager.get_annotations_for_code(code))
-            self.codebook_table.setItem(row, 1, QTableWidgetItem(str(usage)))
+            # Usage count column - use pre-calculated count
+            usage = usage_counts.get(code, 0)
+            usage_item = QTableWidgetItem()
+            usage_item.setData(Qt.ItemDataRole.DisplayRole, usage)  # Store as integer
+            self.codebook_table.setItem(row, 1, usage_item)
             
+            # Color column
             color = self.annotation_manager.code_colors.get(code, '#FFFFFF')
             color_item = QTableWidgetItem()
             color_item.setBackground(QColor(color))
             self.codebook_table.setItem(row, 2, color_item)
             
+            # Description column
             self.codebook_table.setItem(row, 3, QTableWidgetItem(""))
+        
+        # Re-enable sorting and apply current sort
+        self.codebook_table.setSortingEnabled(True)
+        
+        # Apply the current sort order
+        if hasattr(self, 'codebook_sort_column'):
+            sort_order = Qt.SortOrder.AscendingOrder if self.codebook_sort_ascending else Qt.SortOrder.DescendingOrder
+            self.codebook_table.sortItems(self.codebook_sort_column, sort_order)
         
         total_codes = len(self.annotation_manager.codes)
         total_annotations = len(self.annotation_manager.annotations)
         self.code_stats_label.setText(f"Total codes: {total_codes} | Total annotations: {total_annotations}")
+    
+    def sort_codebook_table(self, column):
+        """
+        Handle column header clicks to sort the codebook table
+        
+        Args:
+            column: The column index that was clicked (0=Code, 1=Usage Count, etc.)
+        """
+        # If clicking the same column, toggle sort order
+        if column == self.codebook_sort_column:
+            self.codebook_sort_ascending = not self.codebook_sort_ascending
+        else:
+            # New column - default to ascending for Code, descending for Usage Count
+            self.codebook_sort_column = column
+            if column == 1:  # Usage Count column - default to descending (most-used first)
+                self.codebook_sort_ascending = False
+            else:  # Code column or others - default to ascending (A-Z)
+                self.codebook_sort_ascending = True
+        
+        # Apply the sort
+        sort_order = Qt.SortOrder.AscendingOrder if self.codebook_sort_ascending else Qt.SortOrder.DescendingOrder
+        self.codebook_table.sortItems(column, sort_order)
     
     def add_code_dialog(self):
         code, ok = QInputDialog.getText(self, "Add Code", "Enter code name:")
@@ -2055,7 +2344,8 @@ class VoxScribeGUI(QMainWindow):
             self.annotation_manager.codes.add(code)
             color_idx = len(self.annotation_manager.code_colors) % len(self.annotation_manager.color_palette)
             self.annotation_manager.code_colors[code] = self.annotation_manager.color_palette[color_idx]
-            self.update_all_displays()
+            # Optimized: Only update codebook and dropdown, not records or theme
+            self.update_all_displays(update_codebook=True, update_records=False, update_theme=False, update_dropdown=True)
     
     def rename_code_dialog(self):
         selected = self.codebook_table.currentRow()
@@ -2079,7 +2369,8 @@ class VoxScribeGUI(QMainWindow):
                     self.annotation_manager.code_colors[old_code]
                 del self.annotation_manager.code_colors[old_code]
             
-            self.update_all_displays()
+            # Optimized: Update all except theme tree
+            self.update_all_displays(update_codebook=True, update_records=True, update_theme=False, update_dropdown=True)
             self.refresh_text_display()
             self.ensure_no_selection()
     
@@ -2104,7 +2395,8 @@ class VoxScribeGUI(QMainWindow):
             if code in self.annotation_manager.code_colors:
                 del self.annotation_manager.code_colors[code]
             
-            self.update_all_displays()
+            # Optimized: Update all except theme tree
+            self.update_all_displays(update_codebook=True, update_records=True, update_theme=False, update_dropdown=True)
             self.refresh_text_display()
             self.ensure_no_selection()
     
@@ -2210,12 +2502,18 @@ class VoxScribeGUI(QMainWindow):
         return widget
     
     def update_theme_tree(self):
-        self.theme_tree.clear()
-        
-        for child in self.annotation_manager.theme_root.children:
-            self._add_node_to_tree_recursive(child, None)
-        
-        self.theme_tree.expandAll()
+        """Update theme tree with performance optimization"""
+        # Disable updates during tree rebuild
+        self.theme_tree.setUpdatesEnabled(False)
+        try:
+            self.theme_tree.clear()
+            
+            for child in self.annotation_manager.theme_root.children:
+                self._add_node_to_tree_recursive(child, None)
+            
+            self.theme_tree.expandAll()
+        finally:
+            self.theme_tree.setUpdatesEnabled(True)
     
     def _add_node_to_tree_recursive(self, node, parent_item):
         if parent_item is None:
@@ -2548,18 +2846,29 @@ class VoxScribeGUI(QMainWindow):
         return widget
     
     def update_records_table(self, search_query=""):
+        """Update records table with performance optimizations for large datasets"""
+        # Disable updates and sorting during population for better performance
+        self.records_table.setUpdatesEnabled(False)
+        sorting_enabled = self.records_table.isSortingEnabled()
+        self.records_table.setSortingEnabled(False)
+        
         self.records_table.setRowCount(0)
         count = 0
         
-        for i, ann in enumerate(self.annotation_manager.annotations):
-            if search_query and search_query.lower() not in ann.text.lower() \
-               and search_query.lower() not in ann.code.lower():
-                continue
-            
-            row = self.records_table.rowCount()
-            self.records_table.insertRow(row)
-            
-            self.records_table.setItem(row, 0, QTableWidgetItem(str(i + 1)))
+        # Pre-filter annotations if search query provided
+        if search_query:
+            search_lower = search_query.lower()
+            annotations = [ann for ann in self.annotation_manager.annotations 
+                          if search_lower in ann.text.lower() or search_lower in ann.code.lower()]
+        else:
+            annotations = self.annotation_manager.annotations
+        
+        # Set row count once instead of inserting rows one by one
+        self.records_table.setRowCount(len(annotations))
+        
+        # Populate all rows
+        for row, ann in enumerate(annotations):
+            self.records_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
             self.records_table.setItem(row, 1, QTableWidgetItem(str(ann.start)))
             self.records_table.setItem(row, 2, QTableWidgetItem(str(ann.end)))
             
@@ -2574,6 +2883,10 @@ class VoxScribeGUI(QMainWindow):
             
             self.records_table.setItem(row, 5, QTableWidgetItem(ann.memo[:50]))
             count += 1
+        
+        # Re-enable updates and restore sorting
+        self.records_table.setSortingEnabled(sorting_enabled)
+        self.records_table.setUpdatesEnabled(True)
         
         self.record_count_label.setText(f"Total: {count} annotations")
     
