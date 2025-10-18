@@ -1,26 +1,250 @@
-# Core transcription dependencies
-faster-whisper>=1.2.0
-numpy>=1.24.0
-soundfile>=0.12.0
-pydub>=0.25.1
+# VoxScribe Requirements
+# Optimized for Python 3.9 - 3.12 compatibility
+# Last updated: October 2024
 
-# GUI framework - PySide6 (Qt for Python)
-PySide6>=6.5.0
+# ============================================================================
+# PYTHON VERSION COMPATIBILITY
+# ============================================================================
+# Python 3.9:  ✅ Fully supported
+# Python 3.10: ✅ Fully supported
+# Python 3.11: ✅ Fully supported
+# Python 3.12: ✅ Fully supported
+# Python 3.13: ⚠️  Limited support (PySide6 may have issues)
+# Python 3.14: ❌ Not supported (PySide6 not compatible yet)
+#
+# RECOMMENDED: Python 3.11 or 3.12 for best compatibility
+# ============================================================================
 
-# PyTorch for GPU detection and acceleration
-# For CPU-only:
-torch>=2.0.0
+# ============================================================================
+# CORE TRANSCRIPTION DEPENDENCIES
+# ============================================================================
 
-# For CUDA 11.8 (NVIDIA GPU):
-# torch>=2.0.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+# Faster Whisper - core transcription engine
+# Note: Requires specific ctranslate2 version for stability
+faster-whisper>=1.0.0,<2.0.0
 
-# For CUDA 12.1 (NVIDIA GPU):
-# torch>=2.0.0+cu121 --index-url https://download.pytorch.org/whl/cu121
+# CTranslate2 - backend for faster-whisper
+# Pin to avoid breaking changes
+ctranslate2>=4.0.0,<5.0.0
 
-# Analysis and visualization dependencies
-pandas>=2.0.0
-matplotlib>=3.7.0
+# NumPy - numerical computing (IMPORTANT: version constraints for compatibility)
+# NumPy 2.0+ has breaking changes, keep to 1.x for now
+numpy>=1.24.0,<2.0.0
 
-# Optional: For better performance with large datasets
-# openpyxl>=3.1.0  # For Excel file support
-# scipy>=1.10.0    # For advanced statistics
+# Audio file handling
+soundfile>=0.12.0,<1.0.0
+pydub>=0.25.1,<1.0.0
+
+# Audio format support
+audioread>=3.0.0,<4.0.0
+
+# ============================================================================
+# GUI FRAMEWORK
+# ============================================================================
+
+# PySide6 (Qt for Python) - PRIMARY GUI FRAMEWORK
+# CRITICAL: PySide6 6.8+ requires Python < 3.14
+# PySide6 6.7+ requires Python < 3.13
+# For Python 3.9-3.12: Use 6.5.x - 6.7.x
+PySide6>=6.5.0,<6.8.0
+
+# Qt Material (optional - for enhanced UI theming)
+# Uncomment if you want material design themes
+# qt-material>=2.14
+
+# ============================================================================
+# PYTORCH - GPU ACCELERATION
+# ============================================================================
+
+# PyTorch - deep learning framework for GPU acceleration
+# INSTALLATION OPTIONS (choose ONE):
+
+# OPTION 1: CPU-ONLY (works everywhere, slower)
+torch>=2.0.0,<2.5.0; platform_machine != "cuda"
+torchaudio>=2.0.0,<2.5.0; platform_machine != "cuda"
+
+# OPTION 2: CUDA 11.8 (NVIDIA GPU - most compatible)
+# Uncomment these and comment out CPU-only lines above:
+# torch>=2.0.0,<2.5.0
+# torchaudio>=2.0.0,<2.5.0
+# --extra-index-url https://download.pytorch.org/whl/cu118
+
+# OPTION 3: CUDA 12.1 (NVIDIA GPU - newer cards)
+# Uncomment these and comment out CPU-only lines above:
+# torch>=2.0.0,<2.5.0
+# torchaudio>=2.0.0,<2.5.0
+# --extra-index-url https://download.pytorch.org/whl/cu121
+
+# OPTION 4: ROCm (AMD GPU)
+# torch>=2.0.0,<2.5.0
+# torchaudio>=2.0.0,<2.5.0
+# --extra-index-url https://download.pytorch.org/whl/rocm5.7
+
+# ============================================================================
+# DATA ANALYSIS & VISUALIZATION
+# ============================================================================
+
+# Pandas - data manipulation and analysis
+# Keep to 2.x for stability
+pandas>=2.0.0,<3.0.0
+
+# Matplotlib - plotting and visualization
+# 3.8+ requires Python 3.9+
+matplotlib>=3.7.0,<4.0.0
+
+# NetworkX - for theme/code relationship graphs
+networkx>=3.0,<4.0
+
+# ============================================================================
+# OFFICE FILE SUPPORT
+# ============================================================================
+
+# Excel file support (.xlsx, .xls)
+openpyxl>=3.1.0,<4.0.0
+
+# Word document support (.docx)
+python-docx>=1.0.0,<2.0.0
+
+# PDF support (optional - for export features)
+# reportlab>=4.0.0,<5.0.0
+
+# ============================================================================
+# SCIENTIFIC COMPUTING (OPTIONAL)
+# ============================================================================
+
+# SciPy - advanced statistics and scientific computing
+# Uncomment if you need advanced statistical analysis
+# scipy>=1.10.0,<2.0.0
+
+# Scikit-learn - machine learning utilities
+# Uncomment if you add ML-based features
+# scikit-learn>=1.3.0,<2.0.0
+
+# ============================================================================
+# DEVELOPMENT & TESTING (OPTIONAL)
+# ============================================================================
+
+# Uncomment for development work:
+# pytest>=7.4.0
+# pytest-qt>=4.2.0
+# pytest-cov>=4.1.0
+# black>=23.0.0
+# flake8>=6.0.0
+# mypy>=1.5.0
+
+# ============================================================================
+# COMPATIBILITY NOTES
+# ============================================================================
+
+# KNOWN ISSUES:
+# 
+# 1. PySide6 and Python 3.13+:
+#    - PySide6 6.7.x is the last version to support Python 3.12
+#    - Python 3.13+ support coming in PySide6 6.8+
+#    - Python 3.14 support timeline unclear
+#
+# 2. NumPy 2.0+:
+#    - NumPy 2.0 introduced breaking changes
+#    - Many scientific packages still require NumPy 1.x
+#    - Constraint to <2.0.0 prevents upgrade issues
+#
+# 3. PyTorch installation:
+#    - CPU vs GPU versions are different packages
+#    - CUDA version must match your NVIDIA driver
+#    - Use --extra-index-url for GPU versions
+#
+# 4. Faster-Whisper models:
+#    - Downloaded automatically on first use
+#    - Stored in ~/.cache/huggingface/
+#    - Large models (5+ GB) - ensure sufficient disk space
+#
+# ============================================================================
+# INSTALLATION INSTRUCTIONS
+# ============================================================================
+
+# RECOMMENDED INSTALLATION PROCESS:
+#
+# 1. Create virtual environment:
+#    python -m venv voxscribe_env
+#    source voxscribe_env/bin/activate  # Linux/Mac
+#    # OR
+#    voxscribe_env\Scripts\activate     # Windows
+#
+# 2. Upgrade pip:
+#    pip install --upgrade pip
+#
+# 3. Install requirements:
+#    pip install -r requirements.txt
+#
+# 4. For GPU support (NVIDIA):
+#    # First, check your CUDA version:
+#    nvidia-smi
+#    
+#    # Then install matching PyTorch (example for CUDA 11.8):
+#    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+#
+# 5. Verify installation:
+#    python -c "import PySide6; import faster_whisper; print('✓ All dependencies OK')"
+#
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+
+# Problem: "ModuleNotFoundError: No module named 'PySide6'"
+# Solution: Ensure Python version is 3.9-3.12
+#           pip install --upgrade PySide6
+#
+# Problem: "faster-whisper import error"
+# Solution: pip install --upgrade faster-whisper ctranslate2
+#
+# Problem: GPU not detected
+# Solution: 1. Check NVIDIA driver: nvidia-smi
+#           2. Install correct CUDA PyTorch version
+#           3. Verify: python -c "import torch; print(torch.cuda.is_available())"
+#
+# Problem: "Illegal instruction" error
+# Solution: CPU doesn't support AVX2 - use older faster-whisper
+#           pip install faster-whisper==0.10.0
+#
+# ============================================================================
+# MINIMUM SYSTEM REQUIREMENTS
+# ============================================================================
+
+# CPU:
+#   - x86_64 architecture (Intel/AMD)
+#   - AVX2 instruction set support (for faster-whisper)
+#   - 4+ cores recommended for real-time transcription
+#
+# RAM:
+#   - Minimum: 4 GB
+#   - Recommended: 8 GB
+#   - For large models: 16 GB
+#
+# Storage:
+#   - Minimum: 2 GB for software
+#   - Recommended: 10+ GB for models
+#   - Fast SSD recommended for large files
+#
+# GPU (Optional, for acceleration):
+#   - NVIDIA GPU with CUDA support
+#   - 4+ GB VRAM for medium models
+#   - 8+ GB VRAM for large models
+#
+# ============================================================================
+# PLATFORM-SPECIFIC NOTES
+# ============================================================================
+
+# WINDOWS:
+#   - May need Microsoft Visual C++ Redistributable
+#   - Download: https://aka.ms/vs/17/release/vc_redist.x64.exe
+#
+# MACOS:
+#   - May need Xcode Command Line Tools
+#   - Install: xcode-select --install
+#   - Apple Silicon (M1/M2): Use ARM64 Python
+#
+# LINUX:
+#   - May need: sudo apt-get install libsndfile1 portaudio19-dev
+#   - For CUDA: Install NVIDIA drivers and CUDA toolkit
+#
+# ============================================================================
