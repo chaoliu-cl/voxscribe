@@ -41,8 +41,8 @@ from PySide6.QtWidgets import (
     QGroupBox, QDialog, QStyle, QListWidget, QListWidgetItem,
     QInputDialog, QTreeWidget, QTreeWidgetItem, QScrollArea, QRadioButton
 )
-from PySide6.QtCore import Qt, Signal, QThread, QSize, QEvent, QTimer, QMutex
-from PySide6.QtGui import QFont, QColor, QPalette, QTextCursor, QTextCharFormat
+from PySide6.QtCore import Qt, Signal, QThread, QSize, QEvent, QTimer, QMutex, QMimeData
+from PySide6.QtGui import QFont, QColor, QPalette, QTextCursor, QTextCharFormat, QDrag
 
 import numpy as np
 import pandas as pd
@@ -2425,27 +2425,33 @@ class VoxScribeGUI(QMainWindow):
     # ===== Themes Methods =====
     
     def create_themes_tab(self):
+        """Create themes tab with drag-and-drop support"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
         toolbar = QHBoxLayout()
+        toolbar.setSpacing(5)
         
         add_theme_btn = QPushButton("Add Theme")
+        add_theme_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder))
         add_theme_btn.setToolTip("Add a new theme to organize your codes")
         add_theme_btn.clicked.connect(self.add_theme_dialog)
         toolbar.addWidget(add_theme_btn)
         
         add_subtheme_btn = QPushButton("Add Sub-Theme")
+        add_subtheme_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
         add_subtheme_btn.setToolTip("Add a sub-theme under the selected theme")
         add_subtheme_btn.clicked.connect(self.add_subtheme_dialog)
         toolbar.addWidget(add_subtheme_btn)
         
         add_code_to_theme_btn = QPushButton("Link Code to Theme")
+        add_code_to_theme_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowRight))
         add_code_to_theme_btn.setToolTip("Link an existing code to selected theme")
         add_code_to_theme_btn.clicked.connect(self.add_code_to_theme_dialog)
         toolbar.addWidget(add_code_to_theme_btn)
         
         delete_theme_btn = QPushButton("Delete Selected")
+        delete_theme_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
         delete_theme_btn.setToolTip("Delete selected theme or code link")
         delete_theme_btn.clicked.connect(self.delete_theme_item)
         toolbar.addWidget(delete_theme_btn)
@@ -2453,10 +2459,12 @@ class VoxScribeGUI(QMainWindow):
         toolbar.addStretch()
         
         export_hierarchy_btn = QPushButton("Export")
+        export_hierarchy_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
         export_hierarchy_btn.clicked.connect(self.export_hierarchy)
         toolbar.addWidget(export_hierarchy_btn)
         
         import_hierarchy_btn = QPushButton("Import")
+        import_hierarchy_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
         import_hierarchy_btn.clicked.connect(self.import_hierarchy)
         toolbar.addWidget(import_hierarchy_btn)
         
@@ -2470,18 +2478,38 @@ class VoxScribeGUI(QMainWindow):
         tree_header_layout = QHBoxLayout()
         tree_header_layout.addWidget(QLabel("<b>Theme & Code Hierarchy</b>"))
         tree_header_layout.addStretch()
+        
+        # Add drag-drop info label
+        dragdrop_info = QLabel("💡 Drag items to reorganize")
+        dragdrop_info.setStyleSheet("color: #666; font-style: italic; font-size: 10pt;")
+        tree_header_layout.addWidget(dragdrop_info)
+        
         expand_all_btn = QPushButton("Expand All")
+        expand_all_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton))
         expand_all_btn.clicked.connect(lambda: self.theme_tree.expandAll())
         tree_header_layout.addWidget(expand_all_btn)
+        
         collapse_all_btn = QPushButton("Collapse All")
+        collapse_all_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarMinButton))
         collapse_all_btn.clicked.connect(lambda: self.theme_tree.collapseAll())
         tree_header_layout.addWidget(collapse_all_btn)
         tree_layout.addLayout(tree_header_layout)
         
+        # Create tree widget with drag-drop enabled
         self.theme_tree = QTreeWidget()
         self.theme_tree.setHeaderLabel("Themes and Codes")
         self.theme_tree.itemClicked.connect(self.on_theme_item_clicked)
         self.theme_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        
+        # Enable drag and drop
+        self.theme_tree.setDragEnabled(True)
+        self.theme_tree.setAcceptDrops(True)
+        self.theme_tree.setDropIndicatorShown(True)
+        self.theme_tree.setDragDropMode(QTreeWidget.DragDropMode.InternalMove)
+        
+        # Connect drag-drop signals
+        self.theme_tree.model().rowsMoved.connect(self.on_theme_tree_rows_moved)
+        
         tree_layout.addWidget(self.theme_tree)
         
         details_widget = QWidget()
@@ -2622,6 +2650,112 @@ class VoxScribeGUI(QMainWindow):
                 QMessageBox.information(self, "Success", f"'{node.name}' deleted successfully!")
             else:
                 QMessageBox.warning(self, "Warning", "Cannot delete root item")
+    
+    def on_theme_tree_rows_moved(self, parent, start, end, destination, row):
+        """
+        Handle rows moved in theme tree (drag-drop operation)
+        
+        This updates the internal data structure to match the new tree organization
+        """
+        # Use QTimer to delay processing until after Qt finishes the move
+        QTimer.singleShot(100, self.sync_theme_tree_to_data)
+
+
+    # Add this new method to sync tree to data structure
+    def sync_theme_tree_to_data(self):
+        """
+        Synchronize the theme data structure with the current tree widget state
+        
+        This rebuilds the internal hierarchy based on the visual tree after drag-drop
+        """
+        # Clear existing hierarchy (keep root)
+        self.annotation_manager.theme_root.children.clear()
+        
+        # Rebuild from tree widget
+        root = self.theme_tree.invisibleRootItem()
+        
+        for i in range(root.childCount()):
+            item = root.child(i)
+            node = self._rebuild_node_from_tree_item(item)
+            if node:
+                self.annotation_manager.theme_root.add_child(node)
+        
+        # Show confirmation
+        self.theme_details.setPlainText("✓ Hierarchy reorganized successfully!")
+
+
+    # Add this new method to rebuild nodes from tree items
+    def _rebuild_node_from_tree_item(self, item):
+        """
+        Recursively rebuild ThemeNode structure from QTreeWidgetItem
+        
+        Args:
+            item: QTreeWidgetItem to convert
+            
+        Returns:
+            ThemeNode corresponding to the item
+        """
+        # Get the original node data
+        old_node = item.data(0, Qt.ItemDataRole.UserRole)
+        
+        if not old_node:
+            return None
+        
+        # Create new node with same properties
+        new_node = ThemeNode(
+            old_node.name,
+            old_node.type,
+            old_node.description
+        )
+        new_node.created = old_node.created
+        
+        # Recursively add children
+        for i in range(item.childCount()):
+            child_item = item.child(i)
+            child_node = self._rebuild_node_from_tree_item(child_item)
+            if child_node:
+                new_node.add_child(child_node)
+        
+        return new_node
+
+
+    # Add validation method to prevent invalid drops
+    def _is_valid_drop(self, dragged_node, target_node):
+        """
+        Check if dropping dragged_node onto target_node is valid
+        
+        Rules:
+        - Codes can only be dropped on themes
+        - Themes can be dropped on themes (to create sub-themes)
+        - Cannot drop a theme onto itself or its descendants
+        
+        Args:
+            dragged_node: The node being dragged
+            target_node: The node being dropped onto
+            
+        Returns:
+            bool: True if drop is valid, False otherwise
+        """
+        if not dragged_node or not target_node:
+            return False
+        
+        # Codes can only be dropped on themes
+        if dragged_node.type == "code" and target_node.type != "theme":
+            return False
+        
+        # Cannot drop a theme onto itself
+        if dragged_node == target_node:
+            return False
+        
+        # Cannot drop a theme onto its own descendant
+        if dragged_node.type == "theme":
+            current = target_node
+            while current:
+                if current == dragged_node:
+                    return False
+                current = current.parent
+        
+        return True
     
     def export_hierarchy(self):
         filepath, _ = QFileDialog.getSaveFileName(

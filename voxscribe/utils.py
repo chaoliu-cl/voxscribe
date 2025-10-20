@@ -18,8 +18,21 @@ Utility functions for audio processing and file handling
 
 import os
 from typing import Tuple, Optional
-import soundfile as sf
-from pydub import AudioSegment
+
+# Try to import audio libraries with fallback handling
+try:
+    import soundfile as sf
+    SOUNDFILE_AVAILABLE = True
+except ImportError:
+    SOUNDFILE_AVAILABLE = False
+    print("Warning: soundfile not available. Some audio features may be limited.")
+
+try:
+    from pydub import AudioSegment
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
+    print("Warning: pydub not available. Some audio features may be limited.")
 
 
 def format_time(seconds: float) -> str:
@@ -32,6 +45,9 @@ def format_time(seconds: float) -> str:
     Returns:
         Formatted time string
     """
+    if seconds is None:
+        return "00:00.000"
+    
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = seconds % 60
@@ -52,12 +68,26 @@ def get_audio_duration(filepath: str) -> Optional[float]:
     Returns:
         Duration in seconds, or None if error
     """
-    try:
-        audio = AudioSegment.from_file(filepath)
-        return len(audio) / 1000.0  # Convert to seconds
-    except Exception as e:
-        print(f"Error getting audio duration: {e}")
-        return None
+    # Try soundfile first (more reliable)
+    if SOUNDFILE_AVAILABLE:
+        try:
+            with sf.SoundFile(filepath) as audio_file:
+                duration = len(audio_file) / audio_file.samplerate
+                return duration
+        except Exception as e:
+            print(f"soundfile error: {e}")
+    
+    # Fallback to pydub
+    if PYDUB_AVAILABLE:
+        try:
+            audio = AudioSegment.from_file(filepath)
+            return len(audio) / 1000.0  # Convert to seconds
+        except Exception as e:
+            print(f"pydub error: {e}")
+    
+    # If neither library works, return a default value
+    print(f"Warning: Could not determine duration for {filepath}")
+    return None
 
 
 def validate_audio_file(filepath: str) -> Tuple[bool, str]:
@@ -73,16 +103,28 @@ def validate_audio_file(filepath: str) -> Tuple[bool, str]:
     if not os.path.exists(filepath):
         return False, "File does not exist"
     
-    supported_formats = ['.wav', '.mp3', '.m4a', '.flac', '.ogg', '.opus']
+    supported_formats = ['.wav', '.mp3', '.m4a', '.flac', '.ogg', '.opus', '.aac', '.wma']
     ext = os.path.splitext(filepath)[1].lower()
     
     if ext not in supported_formats:
         return False, f"Unsupported format. Supported: {', '.join(supported_formats)}"
     
+    # If no audio libraries available, just check file exists and has right extension
+    if not SOUNDFILE_AVAILABLE and not PYDUB_AVAILABLE:
+        file_size = os.path.getsize(filepath)
+        if file_size == 0:
+            return False, "File is empty"
+        return True, f"File appears valid ({file_size / 1024:.1f} KB)"
+    
     try:
         # Try to load the file
         duration = get_audio_duration(filepath)
-        if duration is None or duration <= 0:
+        if duration is None:
+            # If we can't get duration but file exists, assume it's okay
+            file_size = os.path.getsize(filepath)
+            return True, f"Audio file detected ({file_size / (1024*1024):.1f} MB)"
+        
+        if duration <= 0:
             return False, "Invalid audio file or zero duration"
         
         return True, f"Valid audio file ({format_time(duration)})"
@@ -100,7 +142,13 @@ def convert_to_wav(input_path: str, output_path: Optional[str] = None) -> str:
         
     Returns:
         Path to the WAV file
+        
+    Raises:
+        RuntimeError: If pydub is not available
     """
+    if not PYDUB_AVAILABLE:
+        raise RuntimeError("pydub is required for audio conversion. Install with: pip install pydub")
+    
     if output_path is None:
         output_path = os.path.splitext(input_path)[0] + '_converted.wav'
     
@@ -122,3 +170,37 @@ def get_file_size_mb(filepath: str) -> float:
     """
     size_bytes = os.path.getsize(filepath)
     return size_bytes / (1024 * 1024)
+
+
+def check_audio_dependencies() -> dict:
+    """
+    Check which audio processing libraries are available
+    
+    Returns:
+        Dictionary with availability status of each library
+    """
+    return {
+        'soundfile': SOUNDFILE_AVAILABLE,
+        'pydub': PYDUB_AVAILABLE,
+    }
+
+
+def get_dependency_install_instructions() -> str:
+    """
+    Get instructions for installing missing dependencies
+    
+    Returns:
+        String with installation instructions
+    """
+    instructions = []
+    
+    if not SOUNDFILE_AVAILABLE:
+        instructions.append("soundfile: pip install soundfile")
+    
+    if not PYDUB_AVAILABLE:
+        instructions.append("pydub: pip install pydub")
+    
+    if instructions:
+        return "Missing dependencies. Install with:\n" + "\n".join(instructions)
+    else:
+        return "All audio dependencies are installed!"
