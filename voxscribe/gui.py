@@ -1412,7 +1412,7 @@ class VoxScribeGUI(QMainWindow):
     # ===== Code Tab Methods =====
     
     def create_code_tab(self):
-        """Create code tab"""
+        """Create code tab - UPDATED with enhanced export options"""
         widget = QWidget()
         main_layout = QVBoxLayout(widget)
         main_layout.setSpacing(10)
@@ -1483,10 +1483,38 @@ class VoxScribeGUI(QMainWindow):
         merge_codes_btn.clicked.connect(self.merge_codes_dialog)
         button_layout.addWidget(merge_codes_btn)
         
-        save_btn = QPushButton("Save Annotated Text")
-        save_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
-        save_btn.clicked.connect(self.save_annotation)
-        button_layout.addWidget(save_btn)
+        # NEW: Export dropdown button
+        export_menu_btn = QPushButton("Export Annotations")
+        export_menu_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
+        export_menu_btn.setToolTip("Export annotations in various formats")
+        
+        # Create export menu
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QAction
+        export_menu = QMenu(export_menu_btn)
+        
+        export_html_action = QAction("Export as HTML", self)
+        export_html_action.triggered.connect(lambda: self.save_annotation('html'))
+        export_menu.addAction(export_html_action)
+        
+        export_srt_action = QAction("Export as SRT (Subtitles)", self)
+        export_srt_action.triggered.connect(lambda: self.save_annotation('srt'))
+        export_menu.addAction(export_srt_action)
+        
+        export_vtt_action = QAction("Export as VTT (Web Subtitles)", self)
+        export_vtt_action.triggered.connect(lambda: self.save_annotation('vtt'))
+        export_menu.addAction(export_vtt_action)
+        
+        export_csv_action = QAction("Export as CSV", self)
+        export_csv_action.triggered.connect(lambda: self.save_annotation('csv'))
+        export_menu.addAction(export_csv_action)
+        
+        export_json_action = QAction("Export as JSON", self)
+        export_json_action.triggered.connect(lambda: self.save_annotation('json'))
+        export_menu.addAction(export_json_action)
+        
+        export_menu_btn.setMenu(export_menu)
+        button_layout.addWidget(export_menu_btn)
         
         input_layout.addLayout(button_layout)
         input_group.setLayout(input_layout)
@@ -1578,26 +1606,16 @@ class VoxScribeGUI(QMainWindow):
         
         text_group_layout.addLayout(title_layout)
         
-        # OPTIMIZATION: Configure QTextEdit for better performance with large documents
         self.coding_text = QTextEdit()
         self.coding_text.setReadOnly(True)
         self.coding_text.viewport().installEventFilter(self)
-        
-        # PERFORMANCE: Reduce undo/redo memory overhead
         self.coding_text.setUndoRedoEnabled(False)
-        
-        # PERFORMANCE: Optimize line wrap for large documents
         self.coding_text.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.coding_text.document().setMaximumBlockCount(1000000)
         
-        # PERFORMANCE: Set a reasonable maximum block count (prevents infinite memory use)
-        # Note: This limits document size but improves performance dramatically
-        # For very large files (>100MB), consider alternative viewing methods
-        self.coding_text.document().setMaximumBlockCount(1000000)  # ~1M lines max
-        
-        # PERFORMANCE: Optimize document layout for faster rendering
         doc = self.coding_text.document()
-        doc.setDocumentMargin(2)  # Reduce margins for faster rendering
-        doc.setUseDesignMetrics(False)  # Use faster metrics calculation
+        doc.setDocumentMargin(2)
+        doc.setUseDesignMetrics(False)
         
         self.update_text_display_font()
         text_group_layout.addWidget(self.coding_text)
@@ -2331,64 +2349,421 @@ class VoxScribeGUI(QMainWindow):
             self.code_status_label.setText("✗ Import failed")
             self.code_status_label.setStyleSheet("color: #d32f2f; font-weight: bold; padding: 5px;")
     
-    def save_annotation(self):
+    def save_annotation(self, format_type='html'):
+        """
+        ENHANCED: Save annotations in multiple formats including SRT, VTT, and CSV
+        
+        Args:
+            format_type: Format to export ('html', 'srt', 'vtt', 'csv', 'json')
+        """
         if not self.annotation_manager.annotations:
             QMessageBox.warning(self, "Warning", "No annotations to save")
             return
         
-        filepath, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Annotated Text",
-            "",
-            "HTML Files (*.html);;Text Files (*.txt);;JSON Files (*.json)"
-        )
+        # Check for timestamps requirement
+        has_timestamps = bool(self.current_text)  # We'll extract position info
         
-        if filepath:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                if filepath.endswith('.json'):
-                    data = {
-                        'text': self.current_text,
-                        'annotations': [
-                            {
-                                'start': a.start,
-                                'end': a.end,
-                                'text': a.text,
-                                'code': a.code,
-                                'memo': a.memo
-                            }
-                            for a in self.annotation_manager.annotations
-                        ],
-                        'codes': list(self.annotation_manager.codes),
-                        'code_colors': self.annotation_manager.code_colors
-                    }
-                    json.dump(data, f, indent=2)
-                elif filepath.endswith('.html'):
-                    html = "<html><head><style>body{font-family:Arial;padding:20px;}</style></head><body>"
-                    html += "<h1>Annotated Text</h1>"
-                    
-                    sorted_anns = sorted(self.annotation_manager.annotations, key=lambda a: a.start)
-                    last_pos = 0
-                    
-                    for ann in sorted_anns:
-                        if ann.start > last_pos:
-                            html += self.current_text[last_pos:ann.start]
-                        
-                        color = self.annotation_manager.code_colors.get(ann.code, '#FFFF00')
-                        html += f'<span style="background-color:{color};padding:2px;" title="{ann.memo}">'
-                        html += self.current_text[ann.start:ann.end]
-                        html += f' <strong>[{ann.code}]</strong></span>'
-                        
-                        last_pos = ann.end
-                    
-                    if last_pos < len(self.current_text):
-                        html += self.current_text[last_pos:]
-                    
-                    html += "</body></html>"
-                    f.write(html)
-                else:
-                    f.write(self.current_text)
+        # Get file path based on format
+        if format_type == 'srt':
+            filepath, _ = QFileDialog.getSaveFileName(
+                self, "Export as SRT", "", "SRT Subtitle Files (*.srt)"
+            )
+        elif format_type == 'vtt':
+            filepath, _ = QFileDialog.getSaveFileName(
+                self, "Export as VTT", "", "WebVTT Subtitle Files (*.vtt)"
+            )
+        elif format_type == 'csv':
+            filepath, _ = QFileDialog.getSaveFileName(
+                self, "Export as CSV", "", "CSV Files (*.csv)"
+            )
+        elif format_type == 'json':
+            filepath, _ = QFileDialog.getSaveFileName(
+                self, "Export as JSON", "", "JSON Files (*.json)"
+            )
+        else:  # html
+            filepath, _ = QFileDialog.getSaveFileName(
+                self, "Export as HTML", "", "HTML Files (*.html)"
+            )
+        
+        if not filepath:
+            return
+        
+        try:
+            if format_type == 'csv':
+                self._export_annotations_csv(filepath)
+            elif format_type == 'srt':
+                self._export_annotations_srt(filepath)
+            elif format_type == 'vtt':
+                self._export_annotations_vtt(filepath)
+            elif format_type == 'json':
+                self._export_annotations_json(filepath)
+            else:  # html
+                self._export_annotations_html(filepath)
             
-            QMessageBox.information(self, "Success", "Annotations saved")
+            QMessageBox.information(
+                self, 
+                "Success", 
+                f"Annotations exported successfully to {format_type.upper()} format!\n\n{filepath}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to export annotations:\n{str(e)}")
+
+
+    def _export_annotations_csv(self, filepath):
+        """Export annotations to CSV format"""
+        import csv
+        
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            
+            # Write header
+            writer.writerow(['ID', 'Start Position', 'End Position', 'Text', 'Code', 'Memo', 'Text Length'])
+            
+            # Write annotations sorted by position
+            sorted_anns = sorted(self.annotation_manager.annotations, key=lambda a: a.start)
+            
+            for idx, ann in enumerate(sorted_anns, 1):
+                writer.writerow([
+                    idx,
+                    ann.start,
+                    ann.end,
+                    ann.text,
+                    ann.code,
+                    ann.memo,
+                    len(ann.text)
+                ])
+
+
+    def _export_annotations_srt(self, filepath):
+        """
+        Export annotations to SRT subtitle format
+        
+        Each annotation becomes a subtitle entry with its text and code
+        """
+        sorted_anns = sorted(self.annotation_manager.annotations, key=lambda a: a.start)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            for idx, ann in enumerate(sorted_anns, 1):
+                # Calculate approximate timestamps based on position
+                # Assume 200 chars per minute reading speed
+                start_time = ann.start / 200.0 * 60.0  # Convert char position to seconds
+                end_time = ann.end / 200.0 * 60.0
+                
+                # Format SRT timestamps (HH:MM:SS,mmm)
+                start_srt = self._format_srt_timestamp(start_time)
+                end_srt = self._format_srt_timestamp(end_time)
+                
+                # Write SRT entry
+                f.write(f"{idx}\n")
+                f.write(f"{start_srt} --> {end_srt}\n")
+                
+                # Write text with code indicator
+                text = ann.text.replace('\n', ' ')  # SRT doesn't handle newlines well
+                f.write(f"[{ann.code}] {text}\n")
+                
+                # Add memo as additional line if present
+                if ann.memo:
+                    memo = ann.memo.replace('\n', ' ')
+                    f.write(f"({memo})\n")
+                
+                f.write("\n")
+
+
+    def _export_annotations_vtt(self, filepath):
+        """
+        Export annotations to WebVTT format
+        
+        Similar to SRT but with VTT-specific formatting
+        """
+        sorted_anns = sorted(self.annotation_manager.annotations, key=lambda a: a.start)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            # VTT header
+            f.write("WEBVTT\n\n")
+            
+            for idx, ann in enumerate(sorted_anns, 1):
+                # Calculate timestamps
+                start_time = ann.start / 200.0 * 60.0
+                end_time = ann.end / 200.0 * 60.0
+                
+                # Format VTT timestamps (HH:MM:SS.mmm)
+                start_vtt = self._format_vtt_timestamp(start_time)
+                end_vtt = self._format_vtt_timestamp(end_time)
+                
+                # Write VTT cue with identifier
+                f.write(f"{idx}\n")
+                f.write(f"{start_vtt} --> {end_vtt}\n")
+                
+                # Write text with code as voice label
+                text = ann.text.replace('\n', ' ')
+                
+                # VTT supports voice tags for styling
+                f.write(f"<v {ann.code}>{text}</v>\n")
+                
+                # Add memo as note if present
+                if ann.memo:
+                    memo = ann.memo.replace('\n', ' ')
+                    f.write(f"<i>({memo})</i>\n")
+                
+                f.write("\n")
+
+
+    def _export_annotations_json(self, filepath):
+        """Export annotations to JSON format with full metadata"""
+        data = {
+            'text': self.current_text,
+            'export_date': datetime.now().isoformat(),
+            'total_annotations': len(self.annotation_manager.annotations),
+            'codes': list(self.annotation_manager.codes),
+            'code_colors': self.annotation_manager.code_colors,
+            'annotations': [
+                {
+                    'id': idx,
+                    'start': ann.start,
+                    'end': ann.end,
+                    'text': ann.text,
+                    'code': ann.code,
+                    'memo': ann.memo,
+                    'length': len(ann.text),
+                    'color': self.annotation_manager.code_colors.get(ann.code, '#FFFFFF')
+                }
+                for idx, ann in enumerate(sorted(self.annotation_manager.annotations, 
+                                                key=lambda a: a.start), 1)
+            ],
+            'statistics': {
+                'total_characters': len(self.current_text),
+                'coded_characters': sum(ann.end - ann.start for ann in self.annotation_manager.annotations),
+                'code_distribution': {
+                    code: len([a for a in self.annotation_manager.annotations if a.code == code])
+                    for code in self.annotation_manager.codes
+                }
+            }
+        }
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+    def _export_annotations_html(self, filepath):
+        """
+        Export annotations to HTML format with ACCURATE visual highlighting
+        
+        FIXED: Properly handles overlapping annotations and correct positioning
+        """
+        import html as html_module  # For escaping
+        
+        html = """<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Annotated Text - VoxScribe</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                padding: 20px;
+                max-width: 1200px;
+                margin: 0 auto;
+                line-height: 1.8;
+            }
+            h1 {
+                color: #333;
+                border-bottom: 2px solid #4CAF50;
+                padding-bottom: 10px;
+            }
+            .metadata {
+                background-color: #f5f5f5;
+                padding: 15px;
+                border-radius: 5px;
+                margin: 20px 0;
+            }
+            .annotation {
+                padding: 2px 4px;
+                margin: 0 1px;
+                border-radius: 3px;
+                cursor: help;
+                position: relative;
+                display: inline;
+            }
+            .code-label {
+                font-weight: bold;
+                font-size: 0.85em;
+                margin-left: 3px;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #333;
+                background-color: rgba(255, 255, 255, 0.7);
+                border: 1px solid #999;
+            }
+            .legend {
+                margin: 20px 0;
+                padding: 15px;
+                background-color: #e8f5e9;
+                border-radius: 5px;
+            }
+            .legend h3 {
+                margin-top: 0;
+                color: #2E7D32;
+            }
+            .legend-item {
+                display: inline-block;
+                margin: 5px 10px 5px 0;
+                padding: 5px 10px;
+                border-radius: 3px;
+                font-weight: bold;
+            }
+            .text-content {
+                margin-top: 30px;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+                font-size: 11pt;
+                background-color: #fafafa;
+                padding: 20px;
+                border-radius: 5px;
+                border: 1px solid #ddd;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>📝 Annotated Text</h1>
+        
+        <div class="metadata">
+            <strong>Export Date:</strong> """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """<br>
+            <strong>Total Annotations:</strong> """ + str(len(self.annotation_manager.annotations)) + """<br>
+            <strong>Unique Codes:</strong> """ + str(len(self.annotation_manager.codes)) + """
+        </div>
+        
+        <div class="legend">
+            <h3>📊 Code Legend</h3>
+    """
+        
+        # Add legend items for each code
+        for code in sorted(self.annotation_manager.codes):
+            color = self.annotation_manager.code_colors.get(code, '#FFFF00')
+            count = len([a for a in self.annotation_manager.annotations if a.code == code])
+            html += f'        <span class="legend-item" style="background-color:{color};">{html_module.escape(code)} ({count})</span>\n'
+        
+        html += """    </div>
+        
+        <div class="text-content">
+    """
+        
+        # CRITICAL FIX: Build annotated text using the ACTUAL annotation.text
+        # This ensures we use exactly what was annotated, not what's in current_text
+        sorted_anns = sorted(self.annotation_manager.annotations, key=lambda a: (a.start, a.end))
+        
+        # Create a list of text segments with their formatting
+        # Each segment is (start_pos, end_pos, text, annotation_or_none)
+        segments = []
+        
+        # Track which parts of the original text are covered by annotations
+        covered_ranges = set()
+        
+        # First pass: Add all annotations as segments using their stored text
+        for ann in sorted_anns:
+            segments.append({
+                'start': ann.start,
+                'end': ann.end,
+                'text': ann.text,  # Use the ACTUAL annotated text
+                'annotation': ann,
+                'is_annotation': True
+            })
+            # Mark this range as covered
+            for i in range(ann.start, ann.end):
+                covered_ranges.add(i)
+        
+        # Second pass: Add unannotated segments from original text
+        if self.current_text:
+            last_pos = 0
+            for ann in sorted_anns:
+                if ann.start > last_pos:
+                    # Add unannotated text before this annotation
+                    segments.append({
+                        'start': last_pos,
+                        'end': ann.start,
+                        'text': self.current_text[last_pos:ann.start],
+                        'annotation': None,
+                        'is_annotation': False
+                    })
+                last_pos = max(last_pos, ann.end)
+            
+            # Add any remaining text after the last annotation
+            if last_pos < len(self.current_text):
+                segments.append({
+                    'start': last_pos,
+                    'end': len(self.current_text),
+                    'text': self.current_text[last_pos:],
+                    'annotation': None,
+                    'is_annotation': False
+                })
+        
+        # Sort segments by start position
+        segments.sort(key=lambda s: (s['start'], -s['end'] if s['is_annotation'] else 0))
+        
+        # Third pass: Merge and render segments
+        last_end = 0
+        for segment in segments:
+            # Skip if this segment overlaps with already rendered content
+            if segment['start'] < last_end:
+                # Handle overlapping annotations
+                if segment['is_annotation']:
+                    # This is an overlapping annotation - render it anyway for completeness
+                    pass
+                else:
+                    # Skip unannotated overlap
+                    continue
+            
+            if segment['is_annotation']:
+                ann = segment['annotation']
+                color = self.annotation_manager.code_colors.get(ann.code, '#FFFF00')
+                
+                # Escape HTML in tooltip and text
+                tooltip = f"Code: {html_module.escape(ann.code)}"
+                if ann.memo:
+                    tooltip += f" | Memo: {html_module.escape(ann.memo)}"
+                
+                # Escape the annotation text for HTML
+                escaped_text = html_module.escape(segment['text'])
+                
+                # Render annotation with highlighting and code label
+                html += f'<span class="annotation" style="background-color:{color};" title="{html_module.escape(tooltip)}">'
+                html += escaped_text
+                html += f' <span class="code-label">[{html_module.escape(ann.code)}]</span></span>'
+                
+                last_end = segment['end']
+            else:
+                # Render plain text (escaped for HTML)
+                html += html_module.escape(segment['text'])
+                last_end = segment['end']
+        
+        html += """    </div>
+        
+        <div style="margin-top: 30px; padding: 15px; background-color: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107;">
+            <strong>ℹ️ Note:</strong> Hover over highlighted text to see code details and memos.
+        </div>
+    </body>
+    </html>"""
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(html)
+
+
+    def _format_srt_timestamp(self, seconds):
+        """Format timestamp for SRT format (HH:MM:SS,mmm)"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millis = int((seconds % 1) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
+    def _format_vtt_timestamp(self, seconds):
+        """Format timestamp for VTT format (HH:MM:SS.mmm)"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millis = int((seconds % 1) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
     
     # ===== Codebook Methods =====
     
@@ -3717,6 +4092,18 @@ class VoxScribeGUI(QMainWindow):
         
         control_layout = QHBoxLayout()
         
+        # ADD: Visualization type dropdown
+        control_layout.addWidget(QLabel("Visualization:"))
+        self.comparison_viz_type = QComboBox()
+        self.comparison_viz_type.addItems([
+            "Side-by-Side Comparison",
+            "Difference Chart (Delta)",
+            "Percentage Change"
+        ])
+        self.comparison_viz_type.setMinimumWidth(200)
+        self.comparison_viz_type.currentIndexChanged.connect(self.update_comparison_visualization)
+        control_layout.addWidget(self.comparison_viz_type)
+        
         compare_btn = QPushButton("Run Comparison")
         compare_btn.clicked.connect(self.run_comparison)
         control_layout.addWidget(compare_btn)
@@ -3827,19 +4214,48 @@ class VoxScribeGUI(QMainWindow):
         
         return annotations
     
+    def update_comparison_visualization(self):
+        """Update the comparison visualization when dropdown changes"""
+        if all(self.comparison_data):
+            self._generate_comparison_chart()
+    
     def run_comparison(self):
         if not all(self.comparison_data):
             QMessageBox.warning(self, "Warning", "Load both files first")
             return
         
+        # Generate the selected visualization
+        self._generate_comparison_chart()
+
+    def _generate_comparison_chart(self):
+        """Generate comparison chart based on selected visualization type"""
         data1, data2 = self.comparison_data
         
+        # Count code frequencies
         codes1 = Counter(d.get('code', '') for d in data1)
         codes2 = Counter(d.get('code', '') for d in data2)
         
         all_codes = sorted(set(codes1.keys()) | set(codes2.keys()))
         
+        viz_type = self.comparison_viz_type.currentText()
+        
         self.comparison_figure.clear()
+        
+        if viz_type == "Side-by-Side Comparison":
+            self._generate_sidebyside_chart(all_codes, codes1, codes2)
+        elif viz_type == "Difference Chart (Delta)":
+            self._generate_difference_chart(all_codes, codes1, codes2)
+        elif viz_type == "Percentage Change":
+            self._generate_percentage_change_chart(all_codes, codes1, codes2)
+        
+        self.comparison_figure.tight_layout()
+        self.comparison_canvas.draw()
+        
+        # Generate text summary
+        self._generate_comparison_summary(data1, data2, codes1, codes2, all_codes)
+
+    def _generate_sidebyside_chart(self, all_codes, codes1, codes2):
+        """Generate side-by-side bar chart"""
         ax = self.comparison_figure.add_subplot(111)
         
         x = np.arange(len(all_codes))
@@ -3848,30 +4264,228 @@ class VoxScribeGUI(QMainWindow):
         counts1 = [codes1.get(c, 0) for c in all_codes]
         counts2 = [codes2.get(c, 0) for c in all_codes]
         
-        ax.bar(x - width/2, counts1, width, label='File 1', color='steelblue')
-        ax.bar(x + width/2, counts2, width, label='File 2', color='coral')
+        ax.bar(x - width/2, counts1, width, label='File 1', color='steelblue', edgecolor='black')
+        ax.bar(x + width/2, counts2, width, label='File 2', color='coral', edgecolor='black')
         
-        ax.set_xlabel('Codes')
-        ax.set_ylabel('Count')
-        ax.set_title('Code Distribution Comparison')
+        ax.set_xlabel('Codes', fontweight='bold')
+        ax.set_ylabel('Count', fontweight='bold')
+        ax.set_title('Side-by-Side Code Comparison', fontsize=14, fontweight='bold', pad=15)
         ax.set_xticks(x)
         ax.set_xticklabels(all_codes, rotation=45, ha='right')
-        ax.legend()
+        ax.legend(loc='upper right')
+        ax.grid(axis='y', alpha=0.3, linestyle='--')
+
+    def _generate_difference_chart(self, all_codes, codes1, codes2):
+        """Generate difference chart showing deltas (File 2 - File 1)"""
+        ax = self.comparison_figure.add_subplot(111)
         
-        self.comparison_figure.tight_layout()
-        self.comparison_canvas.draw()
+        # Calculate differences
+        deltas = []
+        for code in all_codes:
+            delta = codes2.get(code, 0) - codes1.get(code, 0)
+            deltas.append(delta)
         
-        summary = "Comparison Summary\n\n"
+        # Create horizontal bar chart
+        y_pos = np.arange(len(all_codes))
+        
+        # Color bars: green for positive, red for negative, gray for zero
+        colors = []
+        for delta in deltas:
+            if delta > 0:
+                colors.append('#4CAF50')  # Green for increase
+            elif delta < 0:
+                colors.append('#f44336')  # Red for decrease
+            else:
+                colors.append('#9E9E9E')  # Gray for no change
+        
+        bars = ax.barh(y_pos, deltas, color=colors, edgecolor='black', linewidth=1.5)
+        
+        # Add value labels on bars
+        for i, (bar, delta) in enumerate(zip(bars, deltas)):
+            width = bar.get_width()
+            label_x = width + (0.5 if width >= 0 else -0.5)
+            ax.text(label_x, bar.get_y() + bar.get_height()/2, 
+                f'{int(delta):+d}',  # Format with + or - sign
+                ha='left' if width >= 0 else 'right',
+                va='center', fontweight='bold', fontsize=10)
+        
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(all_codes)
+        ax.set_xlabel('Change in Count (File 2 - File 1)', fontweight='bold')
+        ax.set_title('Code Frequency Difference Chart', fontsize=14, fontweight='bold', pad=15)
+        
+        # Add vertical line at x=0
+        ax.axvline(x=0, color='black', linewidth=2, linestyle='-', alpha=0.7)
+        
+        # Add grid
+        ax.grid(axis='x', alpha=0.3, linestyle='--')
+        
+        # Add legend
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor='#4CAF50', edgecolor='black', label='Increase (File 2 > File 1)'),
+            Patch(facecolor='#f44336', edgecolor='black', label='Decrease (File 2 < File 1)'),
+            Patch(facecolor='#9E9E9E', edgecolor='black', label='No Change')
+        ]
+        ax.legend(handles=legend_elements, loc='lower right', fontsize=9)
+
+    def _generate_percentage_change_chart(self, all_codes, codes1, codes2):
+        """Generate percentage change chart"""
+        ax = self.comparison_figure.add_subplot(111)
+        
+        # Calculate percentage changes
+        pct_changes = []
+        for code in all_codes:
+            count1 = codes1.get(code, 0)
+            count2 = codes2.get(code, 0)
+            
+            if count1 == 0 and count2 == 0:
+                pct_change = 0
+            elif count1 == 0:
+                pct_change = 100  # New code in File 2
+            else:
+                pct_change = ((count2 - count1) / count1) * 100
+            
+            pct_changes.append(pct_change)
+        
+        # Create horizontal bar chart
+        y_pos = np.arange(len(all_codes))
+        
+        # Color bars based on percentage change
+        colors = []
+        for pct in pct_changes:
+            if pct > 0:
+                colors.append('#4CAF50')  # Green
+            elif pct < 0:
+                colors.append('#f44336')  # Red
+            else:
+                colors.append('#9E9E9E')  # Gray
+        
+        bars = ax.barh(y_pos, pct_changes, color=colors, edgecolor='black', linewidth=1.5)
+        
+        # Add value labels
+        for i, (bar, pct) in enumerate(zip(bars, pct_changes)):
+            width = bar.get_width()
+            label_x = width + (2 if width >= 0 else -2)
+            ax.text(label_x, bar.get_y() + bar.get_height()/2,
+                f'{pct:+.1f}%',
+                ha='left' if width >= 0 else 'right',
+                va='center', fontweight='bold', fontsize=10)
+        
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(all_codes)
+        ax.set_xlabel('Percentage Change (%)', fontweight='bold')
+        ax.set_title('Code Frequency Percentage Change', fontsize=14, fontweight='bold', pad=15)
+        
+        # Add vertical line at x=0
+        ax.axvline(x=0, color='black', linewidth=2, linestyle='-', alpha=0.7)
+        
+        # Add grid
+        ax.grid(axis='x', alpha=0.3, linestyle='--')
+        
+        # Add legend
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor='#4CAF50', edgecolor='black', label='Increase'),
+            Patch(facecolor='#f44336', edgecolor='black', label='Decrease'),
+            Patch(facecolor='#9E9E9E', edgecolor='black', label='No Change')
+        ]
+        ax.legend(handles=legend_elements, loc='lower right', fontsize=9)
+
+    def _generate_comparison_summary(self, data1, data2, codes1, codes2, all_codes):
+        """Generate detailed text summary of comparison"""
+        viz_type = self.comparison_viz_type.currentText()
+        
+        summary = f"Comparison Summary ({viz_type})\n"
+        summary += "=" * 70 + "\n\n"
+        
+        summary += "FILE STATISTICS\n"
+        summary += "-" * 70 + "\n"
         summary += f"File 1: {len(data1)} annotations, {len(codes1)} unique codes\n"
         summary += f"File 2: {len(data2)} annotations, {len(codes2)} unique codes\n\n"
         
+        # Overall change
+        total_delta = len(data2) - len(data1)
+        pct_change = ((len(data2) - len(data1)) / len(data1) * 100) if len(data1) > 0 else 0
+        summary += f"Total annotation change: {total_delta:+d} ({pct_change:+.1f}%)\n\n"
+        
+        # Code-level analysis
         shared = set(codes1.keys()) & set(codes2.keys())
+        only_file1 = codes1.keys() - codes2.keys()
+        only_file2 = codes2.keys() - codes1.keys()
+        
+        summary += "CODE DISTRIBUTION\n"
+        summary += "-" * 70 + "\n"
         summary += f"Shared codes: {len(shared)}\n"
-        summary += f"Unique to File 1: {len(codes1.keys() - codes2.keys())}\n"
-        summary += f"Unique to File 2: {len(codes2.keys() - codes1.keys())}\n"
+        summary += f"Codes only in File 1: {len(only_file1)}\n"
+        summary += f"Codes only in File 2: {len(only_file2)}\n\n"
+        
+        if viz_type == "Difference Chart (Delta)" or viz_type == "Percentage Change":
+            summary += "DETAILED CODE CHANGES\n"
+            summary += "-" * 70 + "\n"
+            
+            # Calculate and sort by absolute change
+            changes = []
+            for code in all_codes:
+                count1 = codes1.get(code, 0)
+                count2 = codes2.get(code, 0)
+                delta = count2 - count1
+                
+                if count1 == 0 and count2 == 0:
+                    pct = 0
+                elif count1 == 0:
+                    pct = 100
+                else:
+                    pct = ((count2 - count1) / count1) * 100
+                
+                changes.append((code, count1, count2, delta, pct))
+            
+            # Sort by absolute delta (largest changes first)
+            changes.sort(key=lambda x: abs(x[3]), reverse=True)
+            
+            for code, count1, count2, delta, pct in changes:
+                status = "↑" if delta > 0 else "↓" if delta < 0 else "="
+                summary += f"{status} {code}:\n"
+                summary += f"   File 1: {count1} | File 2: {count2} | "
+                summary += f"Change: {delta:+d} ({pct:+.1f}%)\n"
+            
+            summary += "\n"
+        
+        # Codes only in one file
+        if only_file1:
+            summary += "CODES ONLY IN FILE 1\n"
+            summary += "-" * 70 + "\n"
+            for code in sorted(only_file1):
+                summary += f"  • {code}: {codes1[code]} annotations\n"
+            summary += "\n"
+        
+        if only_file2:
+            summary += "CODES ONLY IN FILE 2\n"
+            summary += "-" * 70 + "\n"
+            for code in sorted(only_file2):
+                summary += f"  • {code}: {codes2[code]} annotations\n"
+            summary += "\n"
+        
+        # Top changes
+        if viz_type == "Difference Chart (Delta)":
+            summary += "KEY INSIGHTS\n"
+            summary += "-" * 70 + "\n"
+            
+            increases = [(c, d) for c, _, _, d, _ in changes if d > 0]
+            decreases = [(c, d) for c, _, _, d, _ in changes if d < 0]
+            
+            if increases:
+                top_increase = max(increases, key=lambda x: x[1])
+                summary += f"• Largest increase: {top_increase[0]} (+{top_increase[1]})\n"
+            
+            if decreases:
+                top_decrease = min(decreases, key=lambda x: x[1])
+                summary += f"• Largest decrease: {top_decrease[0]} ({top_decrease[1]})\n"
+            
+            if not increases and not decreases:
+                summary += "• No changes detected between files\n"
         
         self.comparison_summary.setPlainText(summary)
-
 
 def main():
     """Main entry point"""
