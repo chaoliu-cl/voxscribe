@@ -956,7 +956,7 @@ class VoxScribeGUI(QMainWindow):
         settings_layout.addWidget(self.output_format, 2, 1)
         
         self.do_align = QCheckBox("Enable Time Alignment")
-        self.do_align.setChecked(True)
+        self.do_align.setChecked(False)
         settings_layout.addWidget(self.do_align, 3, 0, 1, 2)
         
         settings_group.setLayout(settings_layout)
