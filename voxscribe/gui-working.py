@@ -1624,144 +1624,109 @@ class VoxScribeGUI(QMainWindow):
         self.coding_text.setFont(font)
     
     def ensure_no_selection(self):
-        """
-        ENHANCED: Ensure no text selection and proper highlighting state
-        """
-        # Get current cursor
-        cursor = self.coding_text.textCursor()
-        
-        # Clear any selection
+        cursor = QTextCursor(self.coding_text.document())
         cursor.clearSelection()
-        
-        # Set cursor back without selection
         self.coding_text.setTextCursor(cursor)
-        
-        # CRITICAL: If selection mode is disabled, ensure read-only and proper palette
-        if not self.selection_mode:
-            self.coding_text.setReadOnly(True)
-            
-            # Reset palette to default (removes any blue selection artifacts)
-            palette = self.coding_text.palette()
-            palette.setColor(QPalette.ColorRole.Highlight, QColor(48, 140, 198))
-            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
-            self.coding_text.setPalette(palette)
     
-    # def apply_single_annotation_incremental(self, annotation):
-    #     """
-    #     Apply a single annotation to the display incrementally (FAST - no full rebuild)
-        
-    #     This is much faster than refresh_text_display() for adding one annotation
-    #     because it only updates the specific text range, not the entire document.
-    #     """
-    #     if not self.current_text:
-    #         return
-        
-    #     # OPTIMIZATION: Disable updates during the operation
-    #     self.coding_text.setUpdatesEnabled(False)
-    #     self.coding_text.blockSignals(True)
-        
-    #     try:
-    #         doc = self.coding_text.document()
-            
-    #         # Calculate display position (accounting for existing labels)
-    #         display_start = annotation.start
-    #         display_end = annotation.end
-            
-    #         # Count all annotation labels that come before this position
-    #         for ann in self.annotation_manager.annotations:
-    #             if ann == annotation:
-    #                 continue  # Skip the one we're adding
-    #             if ann.end <= annotation.start:
-    #                 # This annotation's label is before our new annotation
-    #                 label_length = len(f" [{ann.code}]")
-    #                 display_start += label_length
-    #                 display_end += label_length
-            
-    #         # Get color for this code
-    #         color = self.annotation_manager.code_colors.get(annotation.code, '#FFFF00')
-            
-    #         # Create formats
-    #         bg_fmt = QTextCharFormat()
-    #         bg_fmt.setBackground(QColor(color))
-    #         bg_fmt.setForeground(QColor(0, 0, 0))
-            
-    #         label_fmt = QTextCharFormat()
-    #         label_fmt.setForeground(QColor(100, 100, 100))
-    #         label_fmt.setFontWeight(QFont.Weight.Bold)
-    #         label_fmt.setBackground(QColor(color))
-    #         label_fmt.setProperty(1001, annotation.code)
-            
-    #         # Apply formatting in single atomic operation
-    #         cursor = QTextCursor(doc)
-    #         cursor.beginEditBlock()
-            
-    #         try:
-    #             # Apply background to the text range
-    #             cursor.setPosition(display_start)
-    #             cursor.setPosition(display_end, QTextCursor.MoveMode.KeepAnchor)
-    #             cursor.mergeCharFormat(bg_fmt)
-                
-    #             # Insert code label at the end
-    #             cursor.setPosition(display_end)
-    #             label_text = f" [{annotation.code}]"
-    #             cursor.setCharFormat(label_fmt)
-    #             cursor.insertText(label_text)
-                
-    #         finally:
-    #             cursor.endEditBlock()
-            
-    #     finally:
-    #         # Re-enable updates - single repaint
-    #         self.coding_text.blockSignals(False)
-    #         self.coding_text.setUpdatesEnabled(True)
-    
-    def refresh_text_display(self):
+    def apply_single_annotation_incremental(self, annotation):
         """
-        OPTIMIZED: Reliable text display refresh with proper annotation rendering
+        Apply a single annotation to the display incrementally (FAST - no full rebuild)
         
-        This method rebuilds the entire display from scratch, which is slower but
-        guarantees correct positioning and formatting.
+        This is much faster than refresh_text_display() for adding one annotation
+        because it only updates the specific text range, not the entire document.
         """
         if not self.current_text:
             return
         
-        # Store cursor position and scroll position
-        cursor = self.coding_text.textCursor()
-        original_position = cursor.position()
-        scrollbar = self.coding_text.verticalScrollBar()
-        scroll_position = scrollbar.value()
-        
-        # Disable updates and signals for performance
+        # OPTIMIZATION: Disable updates during the operation
         self.coding_text.setUpdatesEnabled(False)
         self.coding_text.blockSignals(True)
         
         try:
-            # CRITICAL: Clear all existing formatting first
+            doc = self.coding_text.document()
+            
+            # Calculate display position (accounting for existing labels)
+            display_start = annotation.start
+            display_end = annotation.end
+            
+            # Count all annotation labels that come before this position
+            for ann in self.annotation_manager.annotations:
+                if ann == annotation:
+                    continue  # Skip the one we're adding
+                if ann.end <= annotation.start:
+                    # This annotation's label is before our new annotation
+                    label_length = len(f" [{ann.code}]")
+                    display_start += label_length
+                    display_end += label_length
+            
+            # Get color for this code
+            color = self.annotation_manager.code_colors.get(annotation.code, '#FFFF00')
+            
+            # Create formats
+            bg_fmt = QTextCharFormat()
+            bg_fmt.setBackground(QColor(color))
+            bg_fmt.setForeground(QColor(0, 0, 0))
+            
+            label_fmt = QTextCharFormat()
+            label_fmt.setForeground(QColor(100, 100, 100))
+            label_fmt.setFontWeight(QFont.Weight.Bold)
+            label_fmt.setBackground(QColor(color))
+            label_fmt.setProperty(1001, annotation.code)
+            
+            # Apply formatting in single atomic operation
+            cursor = QTextCursor(doc)
+            cursor.beginEditBlock()
+            
+            try:
+                # Apply background to the text range
+                cursor.setPosition(display_start)
+                cursor.setPosition(display_end, QTextCursor.MoveMode.KeepAnchor)
+                cursor.mergeCharFormat(bg_fmt)
+                
+                # Insert code label at the end
+                cursor.setPosition(display_end)
+                label_text = f" [{annotation.code}]"
+                cursor.setCharFormat(label_fmt)
+                cursor.insertText(label_text)
+                
+            finally:
+                cursor.endEditBlock()
+            
+        finally:
+            # Re-enable updates - single repaint
+            self.coding_text.blockSignals(False)
+            self.coding_text.setUpdatesEnabled(True)
+    
+    def refresh_text_display(self):
+        """
+        FIXED: Optimized text display refresh with proper annotation rendering
+        
+        Key fix: Annotations are now applied in the correct order and positions
+        are calculated precisely to avoid off-by-one errors.
+        """
+        if not self.current_text:
+            return
+        
+        # Store cursor position
+        cursor = self.coding_text.textCursor()
+        original_position = cursor.position()
+        
+        # Disable updates for performance
+        self.coding_text.setUpdatesEnabled(False)
+        self.coding_text.blockSignals(True)
+        
+        try:
+            # Start fresh
             self.coding_text.clear()
-            
-            # Set plain text (this creates a clean slate)
             self.coding_text.setPlainText(self.current_text)
-            
-            # CRITICAL: Reset text format to default before applying annotations
-            default_fmt = QTextCharFormat()
-            default_fmt.setBackground(QColor(255, 255, 255))  # White background
-            default_fmt.setForeground(QColor(0, 0, 0))  # Black text
-            
-            cursor = QTextCursor(self.coding_text.document())
-            cursor.select(QTextCursor.SelectionType.Document)
-            cursor.mergeCharFormat(default_fmt)
-            cursor.clearSelection()
-            
-            # Sort annotations by start position
-            sorted_annotations = sorted(self.annotation_manager.annotations, 
-                                    key=lambda a: (a.start, a.end))
-            
-            if not sorted_annotations:
-                return
             
             doc = self.coding_text.document()
             
-            # Pre-create format objects (performance optimization)
+            # Sort annotations by start position (process from beginning to end)
+            sorted_annotations = sorted(self.annotation_manager.annotations, 
+                                    key=lambda a: (a.start, a.end))
+            
+            # Pre-create format objects
             fmt_cache = {}
             for ann in sorted_annotations:
                 if ann.code not in fmt_cache:
@@ -1779,26 +1744,26 @@ class VoxScribeGUI(QMainWindow):
                     
                     fmt_cache[ann.code] = (bg_fmt, label_fmt)
             
-            # Apply all annotations in a single atomic operation
+            # Apply annotations in a single atomic operation
             cursor = QTextCursor(doc)
             cursor.beginEditBlock()
             
             try:
-                # Track cumulative offset from inserted labels
+                # Track offset caused by inserted labels
                 offset = 0
                 
                 for ann in sorted_annotations:
-                    # Validate annotation bounds
+                    # Validate bounds
                     if ann.start < 0 or ann.end > len(self.current_text) or ann.start >= ann.end:
                         continue
                     
                     bg_fmt, label_fmt = fmt_cache[ann.code]
                     
-                    # Calculate display positions (accounting for all previous labels)
+                    # Calculate display positions (including offset from previous labels)
                     display_start = ann.start + offset
                     display_end = ann.end + offset
                     
-                    # Apply background highlighting to the annotated text
+                    # Apply background to the annotated text
                     cursor.setPosition(display_start)
                     cursor.setPosition(display_end, QTextCursor.MoveMode.KeepAnchor)
                     cursor.mergeCharFormat(bg_fmt)
@@ -1809,30 +1774,22 @@ class VoxScribeGUI(QMainWindow):
                     cursor.setCharFormat(label_fmt)
                     cursor.insertText(label_text)
                     
-                    # Update offset for subsequent annotations
+                    # Update offset for next annotations
                     offset += len(label_text)
             
             finally:
                 cursor.endEditBlock()
             
-            # Restore cursor position (capped at document length)
-            doc = self.coding_text.document()
-            new_cursor = QTextCursor(doc)
-            safe_position = min(original_position, doc.characterCount() - 1)
-            new_cursor.setPosition(max(0, safe_position))
-            new_cursor.clearSelection()  # CRITICAL: Ensure no selection
-            self.coding_text.setTextCursor(new_cursor)
-            
-            # Restore scroll position
-            QTimer.singleShot(0, lambda: scrollbar.setValue(scroll_position))
+            # Restore cursor position
+            fresh_cursor = QTextCursor(doc)
+            fresh_cursor.setPosition(min(original_position, doc.characterCount() - 1))
+            self.coding_text.setTextCursor(fresh_cursor)
         
         finally:
-            # Re-enable updates (single repaint)
+            # Re-enable updates
             self.coding_text.blockSignals(False)
             self.coding_text.setUpdatesEnabled(True)
-        
-        # CRITICAL: Force clear any residual selection
-        self.ensure_no_selection()
+            self.ensure_no_selection()
         
         # Update status
         ann_count = len(sorted_annotations)
@@ -1927,7 +1884,7 @@ class VoxScribeGUI(QMainWindow):
                 self.code_status_label.setStyleSheet("color: #2E7D32; font-weight: bold; padding: 5px;")
     
     def apply_existing_code(self):
-        """Apply existing code - FIXED to always use reliable refresh"""
+        """Apply existing code - using display selection for user feedback"""
         if not self.annotation_manager.codes:
             QMessageBox.warning(self, "Warning", "No codes available. Create a code first.")
             return
@@ -1947,37 +1904,32 @@ class VoxScribeGUI(QMainWindow):
                 display_start = cursor.selectionStart()
                 display_end = cursor.selectionEnd()
                 
-                # Get selected text
+                # WORKAROUND: Get the text the user selected for feedback
                 selected_display_text = cursor.selectedText()
                 selected_display_text = selected_display_text.replace('\u2029', '\n')
                 
-                # Remove annotation labels
+                # Remove any annotation labels for cleaner display
                 import re
                 clean_selected_text = re.sub(r'\s*\[[^\]]+\]', '', selected_display_text).strip()
                 
-                # Convert positions
+                # Convert positions for storage
                 original_start, original_end = self.convert_display_to_original_positions(display_start, display_end)
                 
-                # Store text
+                # FIX: Store the clean selected text that the user actually saw
                 actual_text = clean_selected_text if clean_selected_text else selected_display_text
                 
                 # Add annotation
                 self.annotation_manager.add_annotation(original_start, original_end, actual_text, code, memo)
                 
-                # Clear selection
                 cursor.clearSelection()
                 self.coding_text.setTextCursor(cursor)
                 
-                # FIXED: Always use full refresh
-                self.refresh_text_display()
-                
                 # Update displays
                 self.update_all_displays(update_codebook=True, update_records=True, update_theme=False, update_dropdown=False)
-                
-                # CRITICAL: Ensure no selection
+                self.refresh_text_display()
                 self.ensure_no_selection()
                 
-                # Show status
+                # WORKAROUND: Show the cleaned selected text for user feedback
                 preview_text = clean_selected_text if clean_selected_text else selected_display_text
                 preview = preview_text[:50] + "..." if len(preview_text) > 50 else preview_text
                 
@@ -2042,7 +1994,7 @@ class VoxScribeGUI(QMainWindow):
             self.update_code_dropdown()
     
     def create_and_apply_code(self):
-        """Create and apply code - FIXED to always use reliable refresh"""
+        """Create and apply code - using display selection for user feedback"""
         code = self.code_input.currentText().strip()
         if not code:
             QMessageBox.warning(self, "Warning", "Please enter a code name")
@@ -2061,41 +2013,50 @@ class VoxScribeGUI(QMainWindow):
             display_start = cursor.selectionStart()
             display_end = cursor.selectionEnd()
             
-            # Get the text that the user selected
+            # WORKAROUND: Get the text that the user actually selected and sees highlighted
+            # This is what they see in the display, and is the most intuitive for feedback
             selected_display_text = cursor.selectedText()
+            # Qt uses special unicode paragraph separator, replace with newline
             selected_display_text = selected_display_text.replace('\u2029', '\n')
             
-            # Remove any annotation labels from selection
+            # Remove any annotation labels that might be in the selection
+            # Labels look like " [codename]"
             import re
+            # Remove all [code] labels from the selected text for cleaner display
             clean_selected_text = re.sub(r'\s*\[[^\]]+\]', '', selected_display_text).strip()
             
             memo = self.memo_input.toPlainText().strip()
             
-            # Convert display positions to original positions
+            # Convert display positions to original positions for storage
             original_start, original_end = self.convert_display_to_original_positions(display_start, display_end)
             
-            # Store the clean selected text
+            # FIX: Store the clean selected text that the user actually saw and selected
+            # This ensures consistency across the UI (status message, records table, etc.)
             actual_text = clean_selected_text if clean_selected_text else selected_display_text
             
-            # Add annotation
+            # Add annotation to manager (stores the clean selected text)
             new_annotation = self.annotation_manager.add_annotation(original_start, original_end, actual_text, code, memo)
             
-            # Clear selection first
             cursor.clearSelection()
             self.coding_text.setTextCursor(cursor)
             self.memo_input.clear()
             
-            # FIXED: Always use full refresh for reliability
-            # The incremental method had bugs with position tracking
-            self.refresh_text_display()
+            # Smart refresh decision
+            annotation_count = len(self.annotation_manager.annotations)
+            use_incremental = len(self.current_text) > 100000 or annotation_count > 10
+            
+            if use_incremental:
+                self.apply_single_annotation_incremental(new_annotation)
+            else:
+                self.refresh_text_display()
             
             # Update tables
             self.update_all_displays(update_codebook=True, update_records=True, update_theme=False, update_dropdown=is_new_code)
             
-            # CRITICAL: Ensure no selection after all updates
             self.ensure_no_selection()
             
-            # Show status with preview
+            # WORKAROUND: Show the cleaned selected text for user feedback
+            # This matches what the user actually saw and selected
             preview_text = clean_selected_text if clean_selected_text else selected_display_text
             preview = preview_text[:50] + "..." if len(preview_text) > 50 else preview_text
             
