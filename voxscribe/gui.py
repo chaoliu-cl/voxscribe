@@ -1412,11 +1412,18 @@ class VoxScribeGUI(QMainWindow):
     # ===== Code Tab Methods =====
     
     def create_code_tab(self):
-        """Create code tab - UPDATED with enhanced export options"""
+        """Create code tab with HORIZONTAL LAYOUT - controls on left, text on right"""
         widget = QWidget()
-        main_layout = QVBoxLayout(widget)
+        main_layout = QHBoxLayout(widget)  # Changed from QVBoxLayout to QHBoxLayout
         main_layout.setSpacing(10)
         
+        # ===== LEFT PANEL: Controls =====
+        left_panel = QWidget()
+        left_panel.setMaximumWidth(400)  # Limit width of controls panel
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setSpacing(10)
+        
+        # Toolbar at top of left panel
         toolbar_layout = QHBoxLayout()
         toolbar_layout.setSpacing(5)
         
@@ -1425,15 +1432,14 @@ class VoxScribeGUI(QMainWindow):
         import_btn.clicked.connect(self.import_text)
         toolbar_layout.addWidget(import_btn)
         
-        refresh_btn = QPushButton("Refresh Display")
+        refresh_btn = QPushButton("Refresh")
         refresh_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
         refresh_btn.clicked.connect(self.refresh_text_display)
         toolbar_layout.addWidget(refresh_btn)
         
-        toolbar_layout.addStretch()
+        left_layout.addLayout(toolbar_layout)
         
-        main_layout.addLayout(toolbar_layout)
-        
+        # Code and Memo Input Group
         input_group = QGroupBox("Code and Memo")
         input_layout = QVBoxLayout()
         input_layout.setSpacing(5)
@@ -1451,18 +1457,18 @@ class VoxScribeGUI(QMainWindow):
         code_input_layout.addWidget(self.code_input)
         input_layout.addLayout(code_input_layout)
         
-        memo_layout = QHBoxLayout()
+        memo_layout = QVBoxLayout()
         memo_layout.setSpacing(5)
         memo_label = QLabel("Memo:")
-        memo_label.setFixedWidth(50)
         memo_layout.addWidget(memo_label)
         self.memo_input = QTextEdit()
         self.memo_input.setPlaceholderText("Enter memo (optional)...")
-        self.memo_input.setMaximumHeight(80)
+        self.memo_input.setMaximumHeight(100)
         memo_layout.addWidget(self.memo_input)
         input_layout.addLayout(memo_layout)
         
-        button_layout = QHBoxLayout()
+        # Action Buttons
+        button_layout = QVBoxLayout()
         button_layout.setSpacing(5)
         
         create_code_btn = QPushButton("Create Code")
@@ -1483,7 +1489,7 @@ class VoxScribeGUI(QMainWindow):
         merge_codes_btn.clicked.connect(self.merge_codes_dialog)
         button_layout.addWidget(merge_codes_btn)
         
-        # NEW: Export dropdown button
+        # Export dropdown button
         export_menu_btn = QPushButton("Export Annotations")
         export_menu_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
         export_menu_btn.setToolTip("Export annotations in various formats")
@@ -1518,42 +1524,68 @@ class VoxScribeGUI(QMainWindow):
         
         input_layout.addLayout(button_layout)
         input_group.setLayout(input_layout)
-        main_layout.addWidget(input_group)
+        left_layout.addWidget(input_group)
         
-        selection_group = QGroupBox("Text Selection")
-        selection_layout = QHBoxLayout()
-        selection_layout.setSpacing(5)
+        # Workflow Legend
+        self.legend_label = QLabel(
+            "<b>Workflow:</b><br>"
+            "1) Enable Selection<br>"
+            "2) Select text on right<br>"
+            "3) Create or Apply Code<br><br>"
+            "<i>Click code labels to remove</i>"
+        )
+        self.legend_label.setStyleSheet(
+            "color: #666; "
+            "font-size: 10pt; "
+            "padding: 10px; "
+            "background-color: #f5f5f5; "
+            "border-radius: 5px; "
+            "border: 1px solid #ddd;"
+        )
+        self.legend_label.setWordWrap(True)
+        left_layout.addWidget(self.legend_label)
         
-        self.select_text_button = QPushButton("Enable Selection")
-        self.select_text_button.setCheckable(True)
-        self.select_text_button.toggled.connect(self.toggle_selection_mode)
-        selection_layout.addWidget(self.select_text_button)
-        
-        clear_selection_btn = QPushButton("Clear Selection")
-        clear_selection_btn.clicked.connect(self.clear_selection)
-        selection_layout.addWidget(clear_selection_btn)
-        
-        selection_layout.addStretch()
-        
-        self.legend_label = QLabel("Workflow: 1) Enable Selection → 2) Select text → 3) Click 'Create Code' or 'Apply Code' | Click code labels to remove")
-        self.legend_label.setStyleSheet("color: #666; font-style: italic; font-size: 10pt;")
-        selection_layout.addWidget(self.legend_label)
-        
-        selection_group.setLayout(selection_layout)
-        main_layout.addWidget(selection_group)
-        
+        # Status Label
         self.code_status_label = QLabel("Ready")
-        self.code_status_label.setStyleSheet("color: #2E7D32; font-weight: bold; padding: 5px;")
-        main_layout.addWidget(self.code_status_label)
+        self.code_status_label.setStyleSheet(
+            "color: #2E7D32; "
+            "font-weight: bold; "
+            "padding: 8px; "
+            "background-color: #e8f5e9; "
+            "border-radius: 5px; "
+            "border: 1px solid #4CAF50;"
+        )
+        self.code_status_label.setWordWrap(True)
+        left_layout.addWidget(self.code_status_label)
         
-        text_group = QGroupBox()
-        text_group_layout = QVBoxLayout(text_group)
-        text_group_layout.setSpacing(5)
-        text_group_layout.setContentsMargins(5, 5, 5, 5)
+        # Add stretch to push everything to top
+        left_layout.addStretch()
         
+        # ===== RIGHT PANEL: Text Display =====
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setSpacing(5)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Title and Font Controls
         title_layout = QHBoxLayout()
         title_layout.setSpacing(5)
         
+        # Selection Mode Buttons (left side)
+        self.select_text_button = QPushButton("Enable Selection")
+        self.select_text_button.setCheckable(True)
+        self.select_text_button.setMinimumHeight(32)
+        self.select_text_button.toggled.connect(self.toggle_selection_mode)
+        title_layout.addWidget(self.select_text_button)
+        
+        clear_selection_btn = QPushButton("Clear Selection")
+        clear_selection_btn.setMinimumHeight(32)
+        clear_selection_btn.clicked.connect(self.clear_selection)
+        title_layout.addWidget(clear_selection_btn)
+        
+        title_layout.addStretch()
+        
+        # Title (center-left)
         title_label = QLabel("<b>Text Display</b>")
         title_layout.addWidget(title_label)
         title_layout.addStretch()
@@ -1604,8 +1636,9 @@ class VoxScribeGUI(QMainWindow):
         increase_font_btn.clicked.connect(self.increase_font_size)
         title_layout.addWidget(increase_font_btn)
         
-        text_group_layout.addLayout(title_layout)
+        right_layout.addLayout(title_layout)
         
+        # Text Display Widget
         self.coding_text = QTextEdit()
         self.coding_text.setReadOnly(True)
         self.coding_text.viewport().installEventFilter(self)
@@ -1618,9 +1651,19 @@ class VoxScribeGUI(QMainWindow):
         doc.setUseDesignMetrics(False)
         
         self.update_text_display_font()
-        text_group_layout.addWidget(self.coding_text)
+        right_layout.addWidget(self.coding_text)
         
-        main_layout.addWidget(text_group)
+        # ===== Add panels to main layout using splitter =====
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(left_panel)
+        splitter.addWidget(right_panel)
+        
+        # Set initial sizes: left panel 400px, right panel takes remaining space
+        splitter.setSizes([400, 800])
+        splitter.setStretchFactor(0, 0)  # Left panel doesn't stretch
+        splitter.setStretchFactor(1, 1)  # Right panel stretches
+        
+        main_layout.addWidget(splitter)
         
         return widget
     
