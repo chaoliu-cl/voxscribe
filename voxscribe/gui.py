@@ -2591,16 +2591,19 @@ class VoxScribeGUI(QMainWindow):
     def _export_annotations_html(self, filepath):
         """
         Export annotations to HTML format with ACCURATE visual highlighting
+        ENHANCED: Now includes position metadata for round-trip compatibility
         
         FIXED: Properly handles overlapping annotations and correct positioning
         """
-        import html as html_module  # For escaping
+        import html as html_module
         
         html = """<!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
         <title>Annotated Text - VoxScribe</title>
+        <meta name="generator" content="VoxScribe">
+        <meta name="voxscribe-version" content="1.0.0">
         <style>
             body {
                 font-family: Arial, sans-serif;
@@ -2665,10 +2668,14 @@ class VoxScribeGUI(QMainWindow):
                 border-radius: 5px;
                 border: 1px solid #ddd;
             }
+            /* Hidden annotation metadata for import */
+            .annotation-data {
+                display: none;
+            }
         </style>
     </head>
     <body>
-        <h1>📝 Annotated Text</h1>
+        <h1>📄 Annotated Text</h1>
         
         <div class="metadata">
             <strong>Export Date:</strong> """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """<br>
@@ -2680,7 +2687,7 @@ class VoxScribeGUI(QMainWindow):
             <h3>📊 Code Legend</h3>
     """
         
-        # Add legend items for each code
+        # Add legend items
         for code in sorted(self.annotation_manager.codes):
             color = self.annotation_manager.code_colors.get(code, '#FFFF00')
             count = len([a for a in self.annotation_manager.annotations if a.code == code])
@@ -2688,39 +2695,53 @@ class VoxScribeGUI(QMainWindow):
         
         html += """    </div>
         
+        <!-- Hidden annotation metadata for round-trip import -->
+        <div class="annotation-data" id="voxscribe-annotations">
+            <script type="application/json">
+    """
+        
+        # Add JSON metadata for perfect round-trip
+        annotations_data = []
+        for ann in sorted(self.annotation_manager.annotations, key=lambda a: a.start):
+            annotations_data.append({
+                'start': ann.start,
+                'end': ann.end,
+                'text': ann.text,
+                'code': ann.code,
+                'memo': ann.memo,
+                'color': self.annotation_manager.code_colors.get(ann.code, '#FFFFFF')
+            })
+        
+        html += json.dumps(annotations_data, indent=2, ensure_ascii=False)
+        
+        html += """
+            </script>
+        </div>
+        
         <div class="text-content">
     """
         
-        # CRITICAL FIX: Build annotated text using the ACTUAL annotation.text
-        # This ensures we use exactly what was annotated, not what's in current_text
+        # Build annotated text (same as before)
         sorted_anns = sorted(self.annotation_manager.annotations, key=lambda a: (a.start, a.end))
-        
-        # Create a list of text segments with their formatting
-        # Each segment is (start_pos, end_pos, text, annotation_or_none)
         segments = []
         
-        # Track which parts of the original text are covered by annotations
         covered_ranges = set()
         
-        # First pass: Add all annotations as segments using their stored text
         for ann in sorted_anns:
             segments.append({
                 'start': ann.start,
                 'end': ann.end,
-                'text': ann.text,  # Use the ACTUAL annotated text
+                'text': ann.text,
                 'annotation': ann,
                 'is_annotation': True
             })
-            # Mark this range as covered
             for i in range(ann.start, ann.end):
                 covered_ranges.add(i)
         
-        # Second pass: Add unannotated segments from original text
         if self.current_text:
             last_pos = 0
             for ann in sorted_anns:
                 if ann.start > last_pos:
-                    # Add unannotated text before this annotation
                     segments.append({
                         'start': last_pos,
                         'end': ann.start,
@@ -2730,7 +2751,6 @@ class VoxScribeGUI(QMainWindow):
                     })
                 last_pos = max(last_pos, ann.end)
             
-            # Add any remaining text after the last annotation
             if last_pos < len(self.current_text):
                 segments.append({
                     'start': last_pos,
@@ -2740,42 +2760,31 @@ class VoxScribeGUI(QMainWindow):
                     'is_annotation': False
                 })
         
-        # Sort segments by start position
         segments.sort(key=lambda s: (s['start'], -s['end'] if s['is_annotation'] else 0))
         
-        # Third pass: Merge and render segments
         last_end = 0
         for segment in segments:
-            # Skip if this segment overlaps with already rendered content
             if segment['start'] < last_end:
-                # Handle overlapping annotations
                 if segment['is_annotation']:
-                    # This is an overlapping annotation - render it anyway for completeness
                     pass
                 else:
-                    # Skip unannotated overlap
                     continue
             
             if segment['is_annotation']:
                 ann = segment['annotation']
                 color = self.annotation_manager.code_colors.get(ann.code, '#FFFF00')
                 
-                # Escape HTML in tooltip and text
                 tooltip = f"Code: {html_module.escape(ann.code)}"
                 if ann.memo:
                     tooltip += f" | Memo: {html_module.escape(ann.memo)}"
                 
-                # Escape the annotation text for HTML
-                escaped_text = html_module.escape(segment['text'])
-                
-                # Render annotation with highlighting and code label
-                html += f'<span class="annotation" style="background-color:{color};" title="{html_module.escape(tooltip)}">'
-                html += escaped_text
+                # Add data attributes for position info
+                html += f'<span class="annotation" style="background-color:{color};" title="{html_module.escape(tooltip)}" data-start="{ann.start}" data-end="{ann.end}">'
+                html += html_module.escape(segment['text'])
                 html += f' <span class="code-label">[{html_module.escape(ann.code)}]</span></span>'
                 
                 last_end = segment['end']
             else:
-                # Render plain text (escaped for HTML)
                 html += html_module.escape(segment['text'])
                 last_end = segment['end']
         
@@ -2783,6 +2792,7 @@ class VoxScribeGUI(QMainWindow):
         
         <div style="margin-top: 30px; padding: 15px; background-color: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107;">
             <strong>ℹ️ Note:</strong> Hover over highlighted text to see code details and memos.
+            This file contains embedded annotation data for re-import into VoxScribe.
         </div>
     </body>
     </html>"""
@@ -4223,36 +4233,120 @@ class VoxScribeGUI(QMainWindow):
 
     def _parse_html_annotations(self, html_content):
         """
-        Parse HTML content to extract annotations
+        Parse HTML content to extract annotations from VoxScribe HTML export
+        
+        Supports two methods:
+        1. Extract from embedded JSON metadata (preferred, preserves all data)
+        2. Parse from HTML spans (fallback, less precise)
         
         Args:
-            html_content: HTML string with annotations
+            html_content: HTML string with annotations (from VoxScribe export)
             
         Returns:
-            List of annotation dictionaries
+            List of annotation dictionaries compatible with comparison analysis
         """
         import re
+        import html as html_module
+        import json
         
         annotations = []
         
-        # Pattern to match annotated spans: <span style="background-color:#COLOR;..." title="MEMO">TEXT <strong>[CODE]</strong></span>
-        # This matches the format created by save_annotation method
-        pattern = r'<span style="background-color:([^;"]+);[^"]*"(?:\s+title="([^"]*)")?>([^<]+)\s*<strong>\[([^\]]+)\]</strong></span>'
+        # Method 1: Try to extract from embedded JSON (new format)
+        json_pattern = r'<script type="application/json">\s*(.*?)\s*</script>'
+        json_match = re.search(json_pattern, html_content, re.DOTALL)
         
-        matches = re.finditer(pattern, html_content)
+        if json_match:
+            try:
+                json_data = json_match.group(1)
+                annotations_data = json.loads(json_data)
+                
+                # Convert to expected format
+                for i, ann_data in enumerate(annotations_data):
+                    annotations.append({
+                        'id': i + 1,
+                        'start': ann_data.get('start', 0),
+                        'end': ann_data.get('end', 0),
+                        'text': ann_data.get('text', ''),
+                        'code': ann_data.get('code', ''),
+                        'memo': ann_data.get('memo', ''),
+                        'color': ann_data.get('color', '#FFFFFF'),
+                        'length': len(ann_data.get('text', ''))
+                    })
+                
+                return annotations
+            except json.JSONDecodeError:
+                # Fall through to Method 2
+                pass
+        
+        # Method 2: Parse from HTML spans (fallback for older exports or other sources)
+        # Pattern with data attributes (if present)
+        pattern_with_data = r'<span\s+class="annotation"\s+style="background-color:\s*([^;"]+);[^"]*"\s+title="([^"]*)"\s+data-start="(\d+)"\s+data-end="(\d+)">\s*(.*?)\s*<span\s+class="code-label">\[([^\]]+)\]</span>\s*</span>'
+        
+        matches = re.finditer(pattern_with_data, html_content, re.DOTALL)
+        found_with_data = False
         
         for i, match in enumerate(matches):
-            color = match.group(1)
-            memo = match.group(2) if match.group(2) else ""
-            text = match.group(3).strip()
-            code = match.group(4)
+            found_with_data = True
+            color = match.group(1).strip()
+            title = match.group(2)
+            start = int(match.group(3))
+            end = int(match.group(4))
+            text = match.group(5).strip()
+            code = match.group(6).strip()
+            
+            # Extract memo from title
+            memo = ""
+            if " | Memo: " in title:
+                parts = title.split(" | Memo: ")
+                if len(parts) == 2:
+                    memo = html_module.unescape(parts[1].strip())
+            
+            text = html_module.unescape(text)
             
             annotations.append({
-                'id': i,
+                'id': i + 1,
+                'start': start,
+                'end': end,
                 'text': text,
                 'code': code,
                 'memo': memo,
-                'color': color
+                'color': color,
+                'length': len(text)
+            })
+        
+        if found_with_data:
+            return annotations
+        
+        # Pattern without data attributes (basic fallback)
+        pattern_basic = r'<span\s+class="annotation"\s+style="background-color:\s*([^;"]+);[^"]*"\s+title="([^"]*)">\s*(.*?)\s*<span\s+class="code-label">\[([^\]]+)\]</span>\s*</span>'
+        
+        matches = re.finditer(pattern_basic, html_content, re.DOTALL)
+        
+        for i, match in enumerate(matches):
+            color = match.group(1).strip()
+            title = match.group(2)
+            text = match.group(3).strip()
+            code = match.group(4).strip()
+            
+            # Extract memo from title
+            memo = ""
+            if " | Memo: " in title:
+                parts = title.split(" | Memo: ")
+                if len(parts) == 2:
+                    memo = html_module.unescape(parts[1].strip())
+            
+            text = html_module.unescape(text)
+            
+            # Without position data, use placeholder positions
+            annotations.append({
+                'id': i + 1,
+                'start': i * 100,  # Placeholder
+                'end': i * 100 + len(text),
+                'text': text,
+                'code': code,
+                'memo': memo,
+                'color': color,
+                'length': len(text)
             })
         
         return annotations
