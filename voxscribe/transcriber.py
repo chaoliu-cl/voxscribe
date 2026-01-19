@@ -25,6 +25,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import time
+import threading
 import numpy as np
 
 logging.basicConfig(level=logging.INFO)
@@ -400,8 +401,25 @@ class AudioTranscriber:
             max_workers = min(max_workers, multiprocessing.cpu_count() // 2)
             logger.info(f"Using {max_workers} parallel workers for CPU processing")
         
-        if self.model is None:
+        use_shared_transcriber = max_workers == 1
+        if use_shared_transcriber and self.model is None:
             self.load_model()
+
+        thread_local = threading.local()
+
+        def get_worker_transcriber():
+            if use_shared_transcriber:
+                return self
+            worker = getattr(thread_local, "transcriber", None)
+            if worker is None:
+                worker = AudioTranscriber(
+                    model_size=self.model_size,
+                    device=self.device,
+                    compute_type=self.compute_type
+                )
+                worker.load_model()
+                thread_local.transcriber = worker
+            return worker
         
         total_files = len(audio_paths)
         batch_results = [None] * total_files
@@ -413,7 +431,8 @@ class AudioTranscriber:
             filename = Path(path).name
             try:
                 start_time = time.time()
-                result = self.transcribe(
+                transcriber = get_worker_transcriber()
+                result = transcriber.transcribe(
                     path,
                     language=language,
                     beam_size=beam_size,

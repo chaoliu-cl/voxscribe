@@ -63,35 +63,35 @@ print("=" * 70)
 try:
     print("Attempting to import transcriber module...")
     from transcriber import AudioTranscriber
-    print("✓ Successfully imported AudioTranscriber from transcriber.py")
+    print("OK: Successfully imported AudioTranscriber from transcriber.py")
 except ImportError as e:
     import_errors.append(f"transcriber: {e}")
-    print(f"✗ Failed to import transcriber: {e}")
+    print(f"ERROR: Failed to import transcriber: {e}")
     USING_DUMMY_CLASSES = True
 
 # Try to import annotator
 try:
     print("Attempting to import annotator module...")
     from annotator import TextAnnotator
-    print("✓ Successfully imported TextAnnotator from annotator.py")
+    print("OK: Successfully imported TextAnnotator from annotator.py")
 except ImportError as e:
     import_errors.append(f"annotator: {e}")
-    print(f"✗ Failed to import annotator: {e}")
+    print(f"ERROR: Failed to import annotator: {e}")
     USING_DUMMY_CLASSES = True
 
 # Try to import utils
 try:
     print("Attempting to import utils module...")
     from utils import validate_audio_file, format_time, get_audio_duration
-    print("✓ Successfully imported utils functions from utils.py")
+    print("OK: Successfully imported utils functions from utils.py")
 except ImportError as e:
     import_errors.append(f"utils: {e}")
-    print(f"✗ Failed to import utils: {e}")
+    print(f"ERROR: Failed to import utils: {e}")
     USING_DUMMY_CLASSES = True
 
 # If imports failed, define dummy classes
 if USING_DUMMY_CLASSES:
-    print("\n⚠️  Using dummy classes - some imports failed")
+    print("\nWARNING: Using dummy classes - some imports failed")
     print(f"Current directory: {os.getcwd()}")
     print(f"Script location: {current_dir}")
     print("\nImport errors:")
@@ -102,11 +102,11 @@ if USING_DUMMY_CLASSES:
     print("\nChecking faster-whisper installation:")
     try:
         import faster_whisper
-        print(f"✓ faster-whisper IS installed (version: {getattr(faster_whisper, '__version__', 'unknown')})")
-        print("  → Problem is likely with local module files (transcriber.py, etc.)")
+        print(f"OK: faster-whisper IS installed (version: {getattr(faster_whisper, '__version__', 'unknown')})")
+        print("  NOTE: Problem is likely with local module files (transcriber.py, etc.)")
     except ImportError:
-        print("✗ faster-whisper is NOT installed")
-        print("  → Install with: pip install faster-whisper")
+        print("ERROR: faster-whisper is NOT installed")
+        print("  NOTE: Install with: pip install faster-whisper")
     
     print("\n" + "=" * 70)
     
@@ -227,7 +227,7 @@ if USING_DUMMY_CLASSES:
             return 60.0
 
 else:
-    print("\n✓ All modules imported successfully!")
+    print("\nOK: All modules imported successfully!")
     print("=" * 70 + "\n")
 
 

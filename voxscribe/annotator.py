@@ -119,25 +119,39 @@ class TextAnnotator:
             'text': merged_text,
             'id': self.segments[segment_ids[0]].get('id', segment_ids[0])
         }
-        
+
         # Add timestamps only if they exist in the original segments
         if 'start' in self.segments[segment_ids[0]] and 'end' in self.segments[segment_ids[-1]]:
             merged_segment['start'] = self.segments[segment_ids[0]]['start']
             merged_segment['end'] = self.segments[segment_ids[-1]]['end']
-        
-        # Replace first segment with merged, remove others
-        self.segments[segment_ids[0]] = merged_segment
-        
-        # Remove merged segments (in reverse to maintain indices)
-        for sid in reversed(segment_ids[1:]):
-            del self.segments[sid]
-            del self.annotations[sid]
-        
-        # Reindex annotations
-        self.annotations = {i: self.annotations.get(i, {}) 
-                          for i in range(len(self.segments))}
-        
-        return segment_ids[0]
+
+        # Build new segments/annotations to keep indices aligned
+        merge_set = set(segment_ids)
+        merged_annotations = {}
+        for sid in segment_ids:
+            for ann_type, ann_list in self.annotations.get(sid, {}).items():
+                merged_annotations.setdefault(ann_type, []).extend(ann_list)
+
+        new_segments = []
+        new_annotations = {}
+        merged_index = None
+
+        for i, segment in enumerate(self.segments):
+            if i == segment_ids[0]:
+                merged_index = len(new_segments)
+                new_segments.append(merged_segment)
+                new_annotations[merged_index] = merged_annotations
+            elif i in merge_set:
+                continue
+            else:
+                new_index = len(new_segments)
+                new_segments.append(segment)
+                new_annotations[new_index] = self.annotations.get(i, {})
+
+        self.segments = new_segments
+        self.annotations = new_annotations
+
+        return merged_index
     
     def split_segment(
         self,
@@ -188,11 +202,23 @@ class TextAnnotator:
         # Replace and insert
         self.segments[segment_id] = first_segment
         self.segments.insert(segment_id + 1, second_segment)
-        
-        # Reindex annotations
-        self.annotations = {i: self.annotations.get(i, {}) 
-                          for i in range(len(self.segments))}
-        
+
+        # Reindex annotations to keep indices aligned
+        old_annotations = self.annotations
+        new_annotations = {}
+
+        for i in range(len(self.segments)):
+            if i < segment_id:
+                new_annotations[i] = old_annotations.get(i, {})
+            elif i == segment_id:
+                new_annotations[i] = old_annotations.get(segment_id, {})
+            elif i == segment_id + 1:
+                new_annotations[i] = {}
+            else:
+                new_annotations[i] = old_annotations.get(i - 1, {})
+
+        self.annotations = new_annotations
+
         return (segment_id, segment_id + 1)
     
     def export_to_json(self, filepath: str) -> None:

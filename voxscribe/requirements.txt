@@ -1,0 +1,40 @@
+# Core transcription dependencies
+faster-whisper>=1.2.0
+numpy>=1.24.0
+soundfile>=0.12.0
+requests>=2.31.0  
+huggingface-hub>=0.19.0  
+
+# pydub is optional - only needed for format conversion
+# On Python 3.13, pydub may have issues due to removed pyaudioop module
+# The app works fine without it (using soundfile instead)
+# Uncomment if you need audio format conversion AND are on Python 3.11/3.12:
+# pydub>=0.25.1
+
+# GUI framework - PySide6 (Qt for Python)
+# Python 3.13 requires PySide6 >= 6.8.0.2
+PySide6>=6.8.0.2
+
+# PyTorch for GPU detection and acceleration
+# For CPU-only (works on all systems):
+torch>=2.0.0
+
+# For CUDA 11.8 (NVIDIA GPU):
+# torch>=2.0.0 --index-url https://download.pytorch.org/whl/cu118
+
+# For CUDA 12.1 (NVIDIA GPU):
+# torch>=2.0.0 --index-url https://download.pytorch.org/whl/cu121
+
+# Analysis and visualization dependencies
+pandas>=2.0.0,<3.0.0
+matplotlib>=3.7.0,<4.0.0
+networkx>=3.0  # For co-occurrence network analysis
+
+# Optional: For better performance with large datasets
+# openpyxl>=3.1.0  # For Excel file support
+# scipy>=1.10.0    # For advanced statistics
+
+# Note: If you're on Python 3.13 and get "No module named 'pyaudioop'" error:
+# 1. Make sure soundfile is installed: pip install soundfile
+# 2. Comment out pydub above (it's optional)
+# 3. Or downgrade to Python 3.11/3.12
