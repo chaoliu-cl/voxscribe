@@ -15,6 +15,7 @@ if assets_dir.exists():
 # Some libraries (matplotlib, networkx, numpy, pandas) can need hidden imports
 hiddenimports = []
 hiddenimports += collect_submodules("matplotlib")
+optional_datas += collect_data_files("faster_whisper")
 
 block_cipher = None
 

@@ -30,3 +30,9 @@ Installer (Inno Setup)
 - Install Inno Setup 6: https://jrsoftware.org/isdl.php
 - Build installer: .\build_installer.ps1
 - Output: .\Output\VoxScribe-Setup.exe
+
+Microsoft Store (MSIX)
+- Build the app first: .\build_exe.ps1
+- Add required PNG assets under packaging\msix\assets (see packaging\msix\ASSETS_README.txt)
+- Build MSIX: .\build_msix.ps1 -Publisher "CN=YOUR_PUBLISHER_ID" -PackageName "YOUR.PACKAGE.NAME"
+- For Store submission, use your Partner Center publisher ID and sign the MSIX.
