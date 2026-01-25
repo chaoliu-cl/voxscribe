@@ -20,7 +20,7 @@ block_cipher = None
 
 
 a = Analysis(
-    [str(project_root / "gui.py")],
+    [str(project_root / "bootstrap.py")],
     pathex=[str(project_root)],
     binaries=[],
     datas=optional_datas,
@@ -46,10 +46,11 @@ exe = EXE(
     [],
     name="VoxScribe",
     debug=False,
+    icon=str(project_root / "assets" / "app.ico"),
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
+    console=False,
 )
 
 coll = COLLECT(
