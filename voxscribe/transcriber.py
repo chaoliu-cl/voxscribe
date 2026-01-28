@@ -17,11 +17,17 @@ Audio transcription module using faster-whisper with MAXIMUM PERFORMANCE OPTIMIZ
 ENHANCED WITH EFFICIENT BATCH PROCESSING AND SPEED IMPROVEMENTS
 """
 
-from faster_whisper import WhisperModel
+import os
+import sys
 from typing import List, Dict, Optional, Callable
 import logging
 import torch
-import os
+
+LOCAL_FASTER_WHISPER_PATH = r"C:\Users\psych\Downloads\faster-whisper"
+if os.path.isdir(LOCAL_FASTER_WHISPER_PATH) and LOCAL_FASTER_WHISPER_PATH not in sys.path:
+    sys.path.insert(0, LOCAL_FASTER_WHISPER_PATH)
+
+from faster_whisper import WhisperModel
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import time

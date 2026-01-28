@@ -24,6 +24,10 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
+LOCAL_FASTER_WHISPER_PATH = r"C:\Users\psych\Downloads\faster-whisper"
+if os.path.isdir(LOCAL_FASTER_WHISPER_PATH) and LOCAL_FASTER_WHISPER_PATH not in sys.path:
+    sys.path.insert(0, LOCAL_FASTER_WHISPER_PATH)
+
 import json
 import re
 from typing import Optional, List, Dict, Any
@@ -44,12 +48,28 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QThread, QSize, QEvent, QTimer, QMutex, QMimeData
 from PySide6.QtGui import QFont, QColor, QPalette, QTextCursor, QTextCharFormat, QDrag
 
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-from matplotlib.figure import Figure
-import networkx as nx
+def _lazy_import_analysis_deps():
+    global np, pd, FigureCanvasQTAgg, Figure, nx
+    if "np" in globals():
+        return
+    try:
+        import numpy as np
+        import pandas as pd
+        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+        import networkx as nx
+    except Exception as exc:
+        raise RuntimeError(
+            "Analysis/comparison dependencies failed to import. "
+            "Install numpy, pandas, matplotlib, and networkx."
+        ) from exc
+    globals().update(
+        np=np,
+        pd=pd,
+        FigureCanvasQTAgg=FigureCanvasQTAgg,
+        Figure=Figure,
+        nx=nx,
+    )
 
 # Now try to import local modules with better error reporting
 USING_DUMMY_CLASSES = False
@@ -858,14 +878,69 @@ class VoxScribeGUI(QMainWindow):
         tab_font.setBold(True)
         self.tabs.setFont(tab_font)
         layout.addWidget(self.tabs)
+        self.tabs.currentChanged.connect(self._ensure_lazy_tab)
+        self._lazy_tab_builders = {
+            "Analysis": self.create_analysis_tab,
+            "Comparison": self.create_comparison_tab,
+        }
+        self._lazy_tab_widgets = {}
         
         self.tabs.addTab(self.create_transcription_tab(), "Transcription")
         self.tabs.addTab(self.create_code_tab(), "Code")
         self.tabs.addTab(self.create_codebook_tab(), "Codebook")
         self.tabs.addTab(self.create_themes_tab(), "Themes")
-        self.tabs.addTab(self.create_analysis_tab(), "Analysis")
+        analysis_placeholder = self._create_lazy_tab_placeholder(
+            "Analysis tools will load on first open."
+        )
+        self._lazy_tab_widgets["Analysis"] = analysis_placeholder
+        self.tabs.addTab(analysis_placeholder, "Analysis")
         self.tabs.addTab(self.create_records_tab(), "Records")
-        self.tabs.addTab(self.create_comparison_tab(), "Comparison")
+        comparison_placeholder = self._create_lazy_tab_placeholder(
+            "Comparison tools will load on first open."
+        )
+        self._lazy_tab_widgets["Comparison"] = comparison_placeholder
+        self.tabs.addTab(comparison_placeholder, "Comparison")
+
+    def _create_lazy_tab_placeholder(self, message: str) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.addStretch()
+        label = QLabel(message)
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+        layout.addStretch()
+        return widget
+
+    def _ensure_lazy_tab(self, index: int) -> None:
+        tab_text = self.tabs.tabText(index)
+        builder = self._lazy_tab_builders.get(tab_text)
+        if not builder:
+            return
+        placeholder = self._lazy_tab_widgets.get(tab_text)
+        try:
+            widget = builder()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Loading Error",
+                f"Unable to load {tab_text} tools.\n\n{exc}",
+            )
+            return
+        if placeholder is None:
+            self.tabs.removeTab(index)
+            self.tabs.insertTab(index, widget, tab_text)
+            self.tabs.setCurrentIndex(index)
+        else:
+            layout = placeholder.layout()
+            if layout is None:
+                layout = QVBoxLayout(placeholder)
+            while layout.count():
+                item = layout.takeAt(0)
+                child = item.widget()
+                if child is not None:
+                    child.setParent(None)
+            layout.addWidget(widget)
+        self._lazy_tab_builders.pop(tab_text, None)
     
     def create_transcription_tab(self):
         """Create transcription tab with batch support and pause/resume"""
@@ -3383,6 +3458,7 @@ class VoxScribeGUI(QMainWindow):
     # ===== Analysis Methods =====
     
     def create_analysis_tab(self):
+        _lazy_import_analysis_deps()
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
@@ -4120,6 +4196,7 @@ class VoxScribeGUI(QMainWindow):
     # ===== Comparison Methods =====
     
     def create_comparison_tab(self):
+        _lazy_import_analysis_deps()
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
@@ -4185,6 +4262,7 @@ class VoxScribeGUI(QMainWindow):
         Load comparison file - supports JSON, CSV, and HTML with annotations
         HTML files should be in the format saved by 'Save Annotated Text' button
         """
+        _lazy_import_analysis_deps()
         filepath, _ = QFileDialog.getOpenFileName(
             self, f"Load File {file_num}", "", 
             "All Supported Files (*.json *.csv *.html);;JSON Files (*.json);;CSV Files (*.csv);;HTML Files (*.html);;All Files (*.*)"
