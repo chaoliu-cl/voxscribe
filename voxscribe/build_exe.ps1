@@ -9,19 +9,24 @@ Param(
 
 $ErrorActionPreference = "Stop"
 
-& $Python -m pip install --upgrade pip
-& $Python -m pip install -r requirements.txt
-& $Python -m pip install pyinstaller
+Push-Location $PSScriptRoot
+try {
+    & $Python -m pip install --upgrade pip
+    & $Python -m pip install -r requirements-build.txt
 
-& $Python -m PyInstaller $Spec
+    & $Python -m PyInstaller $Spec
 
-if ($SignToolPath -and $PfxPath -and $PfxPassword) {
-    $exePath = Join-Path (Join-Path (Get-Location) "dist\\VoxScribe") "VoxScribe.exe"
-    if (Test-Path $exePath) {
-        & $SignToolPath sign /f $PfxPath /p $PfxPassword /fd SHA256 /tr $TimestampUrl /td SHA256 $exePath
-    } else {
-        Write-Warning "Executable not found for signing: $exePath"
+    if ($SignToolPath -and $PfxPath -and $PfxPassword) {
+        $exePath = Join-Path (Join-Path $PSScriptRoot "dist\\VoxScribe") "VoxScribe.exe"
+        if (Test-Path $exePath) {
+            & $SignToolPath sign /f $PfxPath /p $PfxPassword /fd SHA256 /tr $TimestampUrl /td SHA256 $exePath
+        } else {
+            Write-Warning "Executable not found for signing: $exePath"
+        }
     }
-}
 
-Write-Host "Build complete. Output in .\\dist\\VoxScribe" -ForegroundColor Green
+    Write-Host "Build complete. Output in .\\dist\\VoxScribe" -ForegroundColor Green
+}
+finally {
+    Pop-Location
+}

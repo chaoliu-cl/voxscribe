@@ -72,7 +72,7 @@ VoxScribe provides comprehensive functionality for integrated transcription and 
 
 # Implementation
 
-VoxScribe is implemented in Python 3.8+ using a modular architecture that separates transcription, analysis, and interface components, following established principles for research software development [@Druskat2025BetterArchitecture]:
+VoxScribe is implemented in Python 3.11+ using a modular architecture that separates transcription, analysis, and interface components, following established principles for research software development [@Druskat2025BetterArchitecture]:
 
 - `faster-whisper` for GPU-accelerated speech recognition with OpenAI Whisper models
 - `PySide6` for cross-platform graphical user interface
@@ -105,7 +105,7 @@ The VoxScribe architecture comprises four primary layers, each with clearly defi
 
 This layered architecture offers several benefits: Each component can be independently tested, the core logic is reusable through a Python API, and new features—such as additional tabs or enhanced modules—can be introduced without disrupting existing functionality.
 
-VoxScribe requires Python 3.8+ and is compatible with Windows, macOS, and Linux. For optimal transcription performance, an NVIDIA GPU with 4GB+ VRAM is recommended, though CPU-only operation is supported. The software automatically manages model downloads and caching, requiring 1-10GB storage depending on selected models. More detailed documentation and installation instructions can be found on the Github page of the application: https://github.com/chaoliu-cl/voxscribe.
+VoxScribe requires Python 3.11+ and is compatible with Windows, macOS, and Linux. For optimal transcription performance, an NVIDIA GPU with 4GB+ VRAM is recommended, though CPU-only operation is supported. The software automatically manages model downloads and caching, requiring 1-10GB storage depending on selected models. More detailed documentation and installation instructions can be found on the Github page of the application: https://github.com/chaoliu-cl/voxscribe.
 
 # Examples of Use
 
@@ -116,7 +116,7 @@ To demonstrate VoxScribe's integrated capabilities, consider a researcher conduc
 ### Project Setup and Audio Import
 ```python
 # Launch VoxScribe GUI
-python gui.py
+python -m voxscribe.gui
 ```
 
 The researcher imports interview recordings directly into the application, which automatically detects audio formats and prepares files for processing.

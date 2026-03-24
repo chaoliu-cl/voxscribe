@@ -4,7 +4,7 @@
 
 VoxScribe is a powerful desktop application that combines state-of-the-art audio transcription with comprehensive qualitative coding and analysis features. Built with faster-whisper for accurate transcription and PySide6 for a modern GUI, it's designed for researchers, journalists, and anyone working with audio data and qualitative analysis.
 
-![Python Version](https://img.shields.io/badge/python-3.8--3.13-blue)
+![Python Version](https://img.shields.io/badge/python-3.11--3.14-blue)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
@@ -54,10 +54,10 @@ VoxScribe is a powerful desktop application that combines state-of-the-art audio
 
 ## 📋 Requirements
 
-- **Python**: 3.8 - 3.13 (Python 3.14+ not yet supported)
+- **Python**: 3.11 - 3.14
 - **Operating System**: Windows, macOS, or Linux
 - **RAM**: Minimum 4GB (8GB+ recommended for large files)
-- **GPU** (optional): NVIDIA GPU with CUDA 11.8 or 12.1 for acceleration
+- **GPU** (optional): NVIDIA GPU recommended for faster transcription
 
 ## 🚀 Installation
 
@@ -89,26 +89,19 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Option B: With CUDA 11.8 (NVIDIA GPU)**
+**Option B: With NVIDIA GPU acceleration**
 ```bash
-pip install torch --index-url https://download.pytorch.org/whl/cu118
+# Install the torch wheel that matches your CUDA runtime:
+# https://pytorch.org/get-started/locally/
 pip install -r requirements.txt
 ```
 
-**Option C: With CUDA 12.1 (NVIDIA GPU)**
+**Optional audio conversion support**
 ```bash
-pip install torch --index-url https://download.pytorch.org/whl/cu121
-pip install -r requirements.txt
+pip install ".[audio-conversion]"
 ```
 
-**Python 3.13 Users:**
-```bash
-# Python 3.13 is supported but some optional features may be limited
-# (pydub may not be available due to removed pyaudioop module)
-pip install -r requirements.txt
-```
-
-**Note**: Python 3.14+ is not yet supported. Please use Python 3.8 - 3.13.
+**Note**: The dependency baseline now targets Python 3.11+.
 
 ### 4. Verify Installation
 
@@ -123,7 +116,7 @@ python -c "import faster_whisper; print('faster-whisper OK')"
 ### Launch the Application
 
 ```bash
-python gui.py
+python -m voxscribe.gui
 ```
 
 Or, if installed via `pip install -e .`:
@@ -354,26 +347,25 @@ Start,End,Text,Code,Memo
 
 ## 🐛 Troubleshooting
 
-### Python 3.13 Compatibility Issues
+### Optional Audio Conversion Support
 
-**Issue**: "No module named 'pyaudioop'" error on Python 3.13
+**Issue**: Audio conversion features are unavailable
 
 **Solution:**
 ```bash
-# The app works fine without pydub using soundfile
-pip install faster-whisper numpy soundfile PySide6 torch pandas matplotlib networkx
+pip install ".[audio-conversion]"
 ```
 
-**Note**: Some audio format conversion features may be limited on Python 3.13 due to pydub compatibility. The core transcription and coding features work perfectly.
+**Note**: Core transcription, coding, and analysis features work without `pydub`.
 
-### Python 3.14+ Not Supported
+### Python Version Mismatch
 
-**Issue**: Python 3.14 or newer
+**Issue**: Python 3.10 or older
 
 **Solution:**
 ```bash
-# Use Python 3.8 - 3.13
-python3.13 -m venv venv  # or any version from 3.8 to 3.13
+# Use Python 3.11 - 3.14
+python3.11 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -475,7 +467,7 @@ Contributions are welcome! Here's how to get started:
 git clone https://github.com/chaoliu-cl/voxscribe.git
 cd voxscribe
 
-# Use Python 3.8 - 3.13 (3.14+ not supported)
+# Use Python 3.11 - 3.14
 python -m venv venv
 source venv/bin/activate  # or venv\Scripts\activate on Windows
 
@@ -565,7 +557,7 @@ If you use VoxScribe in your research, please cite:
 - ✅ Analysis and visualization
 - ✅ Batch processing with pause/resume
 - ✅ Performance optimizations for large documents
-- ✅ Python 3.13 compatibility
+- ✅ Python 3.11+ dependency baseline
 - 🚧 Cloud storage integration (planned)
 - 🚧 Collaborative coding (planned)
 - 🚧 Plugin system (planned)

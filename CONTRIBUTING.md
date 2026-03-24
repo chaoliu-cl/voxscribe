@@ -52,7 +52,7 @@ Before creating bug reports, please check the [existing issues](https://github.c
 **Use this template:**
 ```markdown
 **VoxScribe Version**: 1.0.0
-**Python Version**: 3.9.7
+**Python Version**: 3.11.9
 **OS**: Windows 11 / macOS 13 / Ubuntu 22.04
 **GPU**: NVIDIA RTX 3060 / CPU only
 
@@ -108,7 +108,7 @@ Documentation improvements are always welcome:
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.11 - 3.14
 - Git
 - Virtual environment tool (venv, conda, etc.)
 - (Optional) NVIDIA GPU with CUDA for acceleration
@@ -135,6 +135,9 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 pip install -e .
+
+# Optional packaging dependencies
+pip install -r voxscribe/requirements-build.txt
 
 # Install optional development tools
 pip install pytest pytest-cov black flake8 mypy
@@ -213,7 +216,7 @@ Describe the tests you ran and how to reproduce
 
 **Test Configuration:**
 - OS: [e.g., Ubuntu 22.04]
-- Python: [e.g., 3.9.7]
+- Python: [e.g., 3.11.9]
 - GPU: [e.g., NVIDIA RTX 3060 or CPU only]
 
 ## Screenshots (if applicable)
@@ -593,7 +596,7 @@ Update CHANGELOG.md for significant changes:
 
 ### Changed
 - Improved memory efficiency in batch processing (#43)
-- Updated faster-whisper to version 1.2.0
+- Updated faster-whisper to version 1.2.1
 
 ### Fixed
 - GPU memory leak in long transcriptions (#44)

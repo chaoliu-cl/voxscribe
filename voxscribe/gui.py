@@ -55,7 +55,7 @@ def _lazy_import_analysis_deps():
     try:
         import numpy as np
         import pandas as pd
-        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
         from matplotlib.figure import Figure
         import networkx as nx
     except Exception as exc:

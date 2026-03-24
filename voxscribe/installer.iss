@@ -1,5 +1,7 @@
 #define MyAppName "VoxScribe"
-#define MyAppVersion "1.0.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "VoxScribe"
 #define MyAppExeName "VoxScribe.exe"
 #define SignToolPath ""
@@ -10,9 +12,15 @@
 [Setup]
 AppId={{D7B0F1C4-4D2E-4F5B-9C4C-5C0C1E7C1A10}
 AppName={#MyAppName}
+AppVerName={#MyAppName} {#MyAppVersion}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\{#MyAppName}
+AppPublisherURL=https://github.com/chaoliu-cl/voxscribe
+AppSupportURL=https://github.com/chaoliu-cl/voxscribe/issues
+AppUpdatesURL=https://github.com/chaoliu-cl/voxscribe/releases
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+DefaultDirName={autopf64}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputBaseFilename=VoxScribe-Setup
@@ -20,6 +28,10 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=assets\app.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
+VersionInfoVersion={#MyAppVersion}
+VersionInfoProductVersion={#MyAppVersion}
+VersionInfoDescription=VoxScribe Installer
 #if SignToolPath != ""
 SignTool=mysig
 SignedUninstaller=yes
