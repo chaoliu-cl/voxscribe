@@ -577,9 +577,6 @@ class TranscriptionWorker(QThread):
             
             self.progress.emit(10, "Model loaded, starting transcription...")
             
-            duration = get_audio_duration(self.audio_path)
-            results = []
-            
             # Define progress callback handler with enhanced time tracking
             def handle_progress(segment_count, processed_duration, total_duration, elapsed_time):
                 """
@@ -703,6 +700,43 @@ class BatchTranscriptionWorker(QThread):
             self.progress.emit(10, "Model loaded, starting batch transcription...")
             
             total_files = len(self.audio_paths)
+
+            if self.use_parallel and total_files > 1 and self.transcriber.device != "cuda":
+                import multiprocessing
+
+                max_workers = min(4, max(1, multiprocessing.cpu_count() // 2), total_files)
+
+                def handle_parallel_progress(completed_count, total_count, filename):
+                    progress_pct = 10 + int((completed_count / total_count) * 80)
+                    self.file_progress.emit(completed_count, total_count, filename)
+                    self.progress.emit(
+                        progress_pct,
+                        f"Completed {completed_count}/{total_count}: {filename}",
+                    )
+
+                self.progress.emit(
+                    10,
+                    f"Model loaded, starting parallel batch transcription ({max_workers} workers)...",
+                )
+                self.results = self.transcriber.transcribe_batch_parallel(
+                    self.audio_paths,
+                    max_workers=max_workers,
+                    language=self.language if self.language != "auto" else None,
+                    include_timestamps=self.include_timestamps,
+                    batch_progress_callback=handle_parallel_progress
+                )
+
+                if self.output_dir:
+                    for result in self.results:
+                        self._save_single_result(result)
+
+                if self._is_cancelled:
+                    self.error.emit("Batch processing cancelled by user")
+                    return
+
+                self.progress.emit(100, f"Complete! {len(self.results)} files processed")
+                self.finished.emit(self.results)
+                return
             
             for i in range(self._current_index, total_files):
                 # Check for cancellation

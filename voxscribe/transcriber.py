@@ -19,7 +19,7 @@ ENHANCED WITH EFFICIENT BATCH PROCESSING AND SPEED IMPROVEMENTS
 
 import os
 import sys
-from typing import List, Dict, Optional, Callable
+from typing import Any, Callable, Dict, List, Optional
 import logging
 import torch
 
@@ -28,11 +28,14 @@ if os.path.isdir(LOCAL_FASTER_WHISPER_PATH) and LOCAL_FASTER_WHISPER_PATH not in
     sys.path.insert(0, LOCAL_FASTER_WHISPER_PATH)
 
 from faster_whisper import WhisperModel
+try:
+    from faster_whisper import BatchedInferencePipeline
+except ImportError:
+    BatchedInferencePipeline = None
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import time
 import threading
-import numpy as np
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,8 +74,16 @@ class AudioTranscriber:
             self.compute_type = compute_type
         
         self.model = None
+        self.batched_model = None
+        self.batch_size = self._detect_optimal_batch_size()
+        self.progress_update_interval = 0.5
         
-        logger.info(f"Configured device: {self.device}, compute_type: {self.compute_type}")
+        logger.info(
+            "Configured device: %s, compute_type: %s, batch_size: %s",
+            self.device,
+            self.compute_type,
+            self.batch_size,
+        )
     
     def _detect_best_device(self) -> str:
         """
@@ -105,6 +116,33 @@ class AudioTranscriber:
         else:
             # int8 is fastest on CPU
             return "int8"
+
+    def _detect_optimal_batch_size(self) -> int:
+        """
+        Detect the best default batch size for transcription.
+
+        Returns:
+            Batch size for inference. Values > 1 enable batched inference.
+        """
+        override = os.getenv("VOXSCRIBE_BATCH_SIZE")
+        if override:
+            try:
+                return max(1, int(override))
+            except ValueError:
+                logger.warning("Ignoring invalid VOXSCRIBE_BATCH_SIZE=%s", override)
+
+        if self.device == "cuda":
+            return 8
+
+        return 1
+
+    def _should_use_batched_inference(self) -> bool:
+        """Return True when faster-whisper batched inference should be used."""
+        return (
+            self.batch_size > 1
+            and BatchedInferencePipeline is not None
+            and self.model is not None
+        )
     
     def load_model(self) -> None:
         """Load the faster-whisper model with maximum optimizations"""
@@ -117,7 +155,7 @@ class AudioTranscriber:
             
             # OPTIMIZATION: Use optimal CPU thread count
             import multiprocessing
-            cpu_threads = min(multiprocessing.cpu_count(), 8) if self.device == "cpu" else 0
+            cpu_threads = min(multiprocessing.cpu_count(), 16) if self.device == "cpu" else 0
             
             # Additional optimizations for model loading
             self.model = WhisperModel(
@@ -130,6 +168,14 @@ class AudioTranscriber:
                 # OPTIMIZATION: Single worker is fastest (avoid overhead)
                 num_workers=1
             )
+            self.batched_model = None
+            if self._should_use_batched_inference():
+                self.batched_model = BatchedInferencePipeline(self.model)
+                logger.info(
+                    "Enabled batched inference pipeline (batch_size=%s)",
+                    self.batch_size,
+                )
+
             logger.info(f"Model loaded successfully (CPU threads: {cpu_threads})")
         except Exception as e:
             logger.error(f"Error loading model: {e}")
@@ -174,13 +220,14 @@ class AudioTranscriber:
             
             # Get total audio duration for progress tracking
             total_duration = None
-            try:
-                import soundfile as sf
-                with sf.SoundFile(audio_path) as audio_file:
-                    total_duration = len(audio_file) / audio_file.samplerate
-                    logger.info(f"Audio duration: {total_duration:.2f} seconds")
-            except Exception as e:
-                logger.warning(f"Could not determine audio duration: {e}")
+            if progress_callback:
+                try:
+                    import soundfile as sf
+                    with sf.SoundFile(audio_path) as audio_file:
+                        total_duration = len(audio_file) / audio_file.samplerate
+                        logger.info(f"Audio duration: {total_duration:.2f} seconds")
+                except Exception as e:
+                    logger.warning(f"Could not determine audio duration: {e}")
             
             # Start timing
             start_time = time.time()
@@ -194,35 +241,39 @@ class AudioTranscriber:
                 "speech_pad_ms": 300  # Reduced for speed
             } if vad_filter else None
             
+            transcribe_kwargs = {
+                "language": language,
+                "beam_size": beam_size,
+                "best_of": 1 if beam_size == 1 else beam_size,
+                "vad_filter": vad_filter,
+                "vad_parameters": vad_params,
+                "word_timestamps": word_timestamps and include_timestamps,
+                "condition_on_previous_text": False,
+                "temperature": 0.0,
+                "compression_ratio_threshold": 2.4,
+                "log_prob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "initial_prompt": None,
+                "suppress_blank": True,
+                "suppress_tokens": [-1],
+                "without_timestamps": not include_timestamps,
+                "language_detection_segments": 1,
+            }
+
+            transcribe_callable = self.model.transcribe
+            if self.batched_model is not None:
+                transcribe_callable = self.batched_model.transcribe
+                transcribe_kwargs["batch_size"] = self.batch_size
+
             # OPTIMIZATION: Maximum speed transcription parameters
-            segments, info = self.model.transcribe(
-                audio_path,
-                language=language,
-                beam_size=beam_size,  # 1 is fastest
-                # VAD for speed
-                vad_filter=vad_filter,
-                vad_parameters=vad_params,
-                # OPTIMIZATION: Disable word timestamps unless explicitly needed
-                word_timestamps=word_timestamps and include_timestamps,
-                # OPTIMIZATION: Disable conditioning for speed (3-5% faster)
-                condition_on_previous_text=False,
-                # OPTIMIZATION: Greedy sampling (temperature=0)
-                temperature=0.0,
-                # OPTIMIZATION: More lenient thresholds for speed
-                compression_ratio_threshold=2.4,
-                log_prob_threshold=-1.0,
-                no_speech_threshold=0.6,
-                initial_prompt=None,
-                # Suppress settings
-                suppress_blank=True,
-                suppress_tokens=[-1],
-                without_timestamps=not include_timestamps
-            )
+            segments, info = transcribe_callable(audio_path, **transcribe_kwargs)
             
             logger.info(f"Detected language: {info.language} (probability: {info.language_probability:.2f})")
             
             results = []
             segment_count = 0
+            last_progress_emit = start_time
+            last_processed_duration = None
             
             # OPTIMIZATION: Process segments with minimal overhead
             for segment in segments:
@@ -253,14 +304,36 @@ class AudioTranscriber:
                 
                 # Call progress callback if provided
                 if progress_callback:
-                    elapsed_time = time.time() - start_time
                     processed_duration = segment.end if include_timestamps else None
-                    progress_callback(segment_count, processed_duration, total_duration, elapsed_time)
+                    now = time.time()
+                    if (
+                        segment_count == 1
+                        or now - last_progress_emit >= self.progress_update_interval
+                    ):
+                        elapsed_time = now - start_time
+                        progress_callback(
+                            segment_count,
+                            processed_duration,
+                            total_duration,
+                            elapsed_time,
+                        )
+                        last_progress_emit = now
+                        last_processed_duration = processed_duration
                 
                 if include_timestamps:
                     logger.debug(f"[{segment.start:.2f}s -> {segment.end:.2f}s] {segment.text}")
                 else:
                     logger.debug(f"Segment {segment_count}: {segment.text}")
+
+            if progress_callback and segment_count > 0:
+                final_duration = results[-1].get('end') if include_timestamps else None
+                if final_duration != last_processed_duration:
+                    progress_callback(
+                        segment_count,
+                        final_duration,
+                        total_duration,
+                        time.time() - start_time,
+                    )
             
             elapsed = time.time() - start_time
             if total_duration:
