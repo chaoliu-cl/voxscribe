@@ -21,7 +21,11 @@ import os
 import sys
 from typing import Any, Callable, Dict, List, Optional
 import logging
-import torch
+
+try:
+    import torch
+except ImportError:
+    torch = None
 
 LOCAL_FASTER_WHISPER_PATH = r"C:\Users\psych\Downloads\faster-whisper"
 if os.path.isdir(LOCAL_FASTER_WHISPER_PATH) and LOCAL_FASTER_WHISPER_PATH not in sys.path:
@@ -39,6 +43,11 @@ import threading
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _torch_cuda_available() -> bool:
+    """Return True when torch is installed and CUDA is available."""
+    return torch is not None and torch.cuda.is_available()
 
 
 class AudioTranscriber:
@@ -92,8 +101,12 @@ class AudioTranscriber:
         Returns:
             Device string ('cuda' or 'cpu')
         """
+        if torch is None:
+            logger.info("PyTorch not installed; using CPU mode")
+            return "cpu"
+
         try:
-            if torch.cuda.is_available():
+            if _torch_cuda_available():
                 logger.info(f"CUDA available: {torch.cuda.get_device_name(0)}")
                 return "cuda"
         except Exception as e:
@@ -610,13 +623,14 @@ class AudioTranscriber:
             "device": self.device,
             "compute_type": self.compute_type,
             "model_size": self.model_size,
-            "model_loaded": self.model is not None
+            "model_loaded": self.model is not None,
+            "torch_available": torch is not None,
         }
         
         if self.device == "cuda":
             try:
-                info["cuda_available"] = torch.cuda.is_available()
-                if torch.cuda.is_available():
+                info["cuda_available"] = _torch_cuda_available()
+                if _torch_cuda_available():
                     info["cuda_device_name"] = torch.cuda.get_device_name(0)
                     info["cuda_device_count"] = torch.cuda.device_count()
             except Exception as e:

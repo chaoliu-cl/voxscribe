@@ -27,7 +27,7 @@ setup(
     install_requires=[
         "faster-whisper>=1.2.1",
         "PySide6>=6.11.0",
-        "torch>=2.11.0",
+        "torch>=2.11.0; platform_system != 'Darwin'",
         "numpy>=2.4.3",
         "pandas>=3.0.1",
         "matplotlib>=3.10.8,<4.0.0",

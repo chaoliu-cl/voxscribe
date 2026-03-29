@@ -3,7 +3,7 @@ faster-whisper>=1.2.1
 numpy>=2.4.3
 soundfile>=0.13.1
 PySide6>=6.11.0
-torch>=2.11.0
+torch>=2.11.0; platform_system != "Darwin"
 pandas>=3.0.1
 matplotlib>=3.10.8,<4.0.0
 networkx>=3.6.1
@@ -12,5 +12,6 @@ networkx>=3.6.1
 # Install manually only if you need format conversion via ffmpeg/pydub.
 # pydub>=0.25.1
 
+# On macOS, torch is optional and VoxScribe falls back to CPU mode if it is absent.
 # GPU users should install the torch wheel that matches their CUDA runtime.
 # See: https://pytorch.org/get-started/locally/
