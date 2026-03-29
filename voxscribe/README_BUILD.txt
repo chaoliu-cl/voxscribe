@@ -41,6 +41,11 @@ Installer (Inno Setup)
 Microsoft Store (MSIX)
 - Build the app first: .\build_exe.ps1
 - Add required PNG assets under packaging\msix\assets (see packaging\msix\ASSETS_README.txt)
-- Build MSIX: .\build_msix.ps1 -Publisher "CN=YOUR_PUBLISHER_ID" -PackageName "YOUR.PACKAGE.NAME"
+- Build MSIX: .\build_msix.ps1
+- Defaults are preconfigured for the VoxScribe Partner Center identity:
+  Name=`ChaoLiu.VoxScribe`, Publisher=`CN=BF3179B5-D0C9-4D45-9E32-48C896F13BDB`,
+  PublisherDisplayName=`Chao Liu`
 - The MSIX version defaults to the package `__version__` with a trailing `.0`.
-- For Store submission, use your Partner Center publisher ID and sign the MSIX.
+- If you do not pass `-CertPath`, the script creates or reuses a matching self-signed code-signing
+  certificate in `CurrentUser\My`, signs the package, and exports the public `.cer` beside the MSIX assets.
+- Output: .\dist\ChaoLiu.VoxScribe.msix and .\dist\ChaoLiu.VoxScribe.msixupload

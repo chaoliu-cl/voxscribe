@@ -66,3 +66,5 @@ examples/*.m4a
 test_audio/
 output/
 transcriptions/
+voxscribe/packaging/msix/_build/
+voxscribe/packaging/msix/*.cer
