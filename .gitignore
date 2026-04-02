@@ -68,3 +68,4 @@ output/
 transcriptions/
 voxscribe/packaging/msix/_build/
 voxscribe/packaging/msix/*.cer
+voxscribe/bundled_models/

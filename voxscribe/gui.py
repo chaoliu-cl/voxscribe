@@ -18,6 +18,7 @@ VoxScribe GUI
 
 import sys
 import os
+import logging
 
 # Add current directory to path if needed
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -47,6 +48,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QThread, QSize, QEvent, QTimer, QMutex, QMimeData
 from PySide6.QtGui import QFont, QColor, QPalette, QTextCursor, QTextCharFormat, QDrag
+
+logger = logging.getLogger(__name__)
 
 def _lazy_import_analysis_deps():
     global np, pd, FigureCanvasQTAgg, Figure, nx
@@ -142,15 +145,19 @@ if USING_DUMMY_CLASSES:
             def get_device_info(self):
                 return {"device": self.device, "compute_type": self.compute_type}
             
-            def load_model(self):
+            def load_model(self, status_callback=None):
+                if status_callback:
+                    status_callback(5, "Loading model...")
                 pass
             
-            def change_model(self, size, device=None, compute_type=None):
+            def change_model(self, size, device=None, compute_type=None, status_callback=None):
                 self.model_size = size
                 if device:
                     self.device = device
                 if compute_type:
                     self.compute_type = compute_type
+                if status_callback:
+                    status_callback(5, "Loading model...")
             
             def transcribe(self, audio_path, language=None, beam_size=5, 
                           vad_filter=True, include_timestamps=True, 
@@ -566,14 +573,20 @@ class TranscriptionWorker(QThread):
     def run(self):
         try:
             self.progress.emit(5, "Loading model...")
+
+            def handle_model_status(percentage, message):
+                self.progress.emit(percentage, message)
             
             # Always ensure model is loaded properly
             if self.transcriber.model is None or self.transcriber.model_size != self.model_size:
-                self.transcriber.change_model(self.model_size)
+                self.transcriber.change_model(
+                    self.model_size,
+                    status_callback=handle_model_status
+                )
             
             # Verify model is loaded
             if self.transcriber.model is None:
-                self.transcriber.load_model()
+                self.transcriber.load_model(status_callback=handle_model_status)
             
             self.progress.emit(10, "Model loaded, starting transcription...")
             
@@ -633,9 +646,8 @@ class TranscriptionWorker(QThread):
             self.finished.emit(result)
             
         except Exception as e:
-            import traceback
-            error_details = f"{str(e)}\n\n{traceback.format_exc()}"
-            self.error.emit(error_details)
+            logger.exception("Single-file transcription failed")
+            self.error.emit(str(e))
 
 
 class BatchTranscriptionWorker(QThread):
@@ -691,11 +703,17 @@ class BatchTranscriptionWorker(QThread):
     def run(self):
         try:
             self.progress.emit(5, "Loading model...")
+
+            def handle_model_status(percentage, message):
+                self.progress.emit(percentage, message)
             
             if self.transcriber.model_size != self.model_size:
-                self.transcriber.change_model(self.model_size)
+                self.transcriber.change_model(
+                    self.model_size,
+                    status_callback=handle_model_status
+                )
             elif self.transcriber.model is None:
-                self.transcriber.load_model()
+                self.transcriber.load_model(status_callback=handle_model_status)
             
             self.progress.emit(10, "Model loaded, starting batch transcription...")
             
@@ -804,6 +822,7 @@ class BatchTranscriptionWorker(QThread):
             self.finished.emit(self.results)
             
         except Exception as e:
+            logger.exception("Batch transcription failed")
             self.error.emit(str(e))
     
     def _save_single_result(self, result):

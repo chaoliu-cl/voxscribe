@@ -31,7 +31,8 @@ Release artifacts:
 
 Notes:
 
-- The first launch may download the selected Whisper model.
+- Windows packaged builds include the default `base` Whisper model for offline transcription.
+- Selecting a different model size may still download that model on first use.
 - An NVIDIA GPU is optional but can significantly speed up transcription.
 
 ## Quick Start
@@ -89,9 +90,11 @@ Packaging scripts are included in [`voxscribe/README_BUILD.txt`](./voxscribe/REA
 - Windows MSIX: `voxscribe/build_msix.ps1`
 - macOS universal installer: `voxscribe/build_macos_universal.sh`
 
+The Windows build script stages the default `base` faster-whisper model into the package so first-run transcription does not depend on a live Hugging Face download.
+
 ## Troubleshooting
 
-- Model download problems: verify internet access on first launch or set a writable cache location.
+- Model download problems: packaged Windows builds already include the offline `base` model. Other model sizes still require access to `huggingface.co` on first use.
 - GPU not detected: confirm that PyTorch can see your CUDA installation.
 - Slow transcription: use a smaller model or CPU/GPU settings that match your hardware.
 

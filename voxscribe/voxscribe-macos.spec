@@ -38,8 +38,14 @@ optional_datas = []
 if assets_dir.exists():
     optional_datas.append((str(assets_dir), "assets"))
 
+bundled_models_dir = project_root / "bundled_models"
+if bundled_models_dir.exists():
+    optional_datas.append((str(bundled_models_dir), "bundled_models"))
+
 optional_datas += collect_data_files("faster_whisper")
-hiddenimports = collect_submodules("matplotlib")
+hiddenimports = []
+for module_name in ("matplotlib", "faster_whisper", "huggingface_hub"):
+    hiddenimports += collect_submodules(module_name)
 
 
 a = Analysis(

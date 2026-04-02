@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 project_root = Path(SPECPATH)
 
@@ -12,9 +12,14 @@ optional_datas = []
 if assets_dir.exists():
     optional_datas.append((str(assets_dir), "assets"))
 
-# Some libraries (matplotlib, networkx, numpy, pandas) can need hidden imports
+bundled_models_dir = project_root / "bundled_models"
+if bundled_models_dir.exists():
+    optional_datas.append((str(bundled_models_dir), "bundled_models"))
+
+# Some libraries use lazy imports that PyInstaller can miss in packaged builds.
 hiddenimports = []
-hiddenimports += collect_submodules("matplotlib")
+for module_name in ("matplotlib", "faster_whisper", "huggingface_hub"):
+    hiddenimports += collect_submodules(module_name)
 optional_datas += collect_data_files("faster_whisper")
 
 block_cipher = None

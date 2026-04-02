@@ -14,7 +14,9 @@ try {
     & $Python -m pip install --upgrade pip
     & $Python -m pip install -r requirements-build.txt
 
-    & $Python -m PyInstaller $Spec
+    & $Python .\prepare_bundled_models.py --models base
+
+    & $Python -m PyInstaller --noconfirm $Spec
 
     if ($SignToolPath -and $PfxPath -and $PfxPassword) {
         $exePath = Join-Path (Join-Path $PSScriptRoot "dist\\VoxScribe") "VoxScribe.exe"
