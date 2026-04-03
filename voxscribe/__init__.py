@@ -16,7 +16,7 @@
 VoxScribe - Audio Transcription & Qualitative Analysis Tool
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __author__ = "Chao Liu"
 
 from .transcriber import AudioTranscriber

@@ -48,6 +48,41 @@ Typical workflow:
 5. Use the analysis views to inspect frequency, co-occurrence, and comparisons.
 6. Export transcripts, coded data, or reports in the format you need.
 
+## Keyboard Shortcuts
+
+VoxScribe includes a keyboard-first workflow for transcription, coding, and navigation.
+
+Global shortcuts:
+
+- `Alt+1` to `Alt+9`: switch directly to the corresponding tab
+- `Ctrl+Shift+O`: browse and add audio files
+- `Ctrl+Enter`: run the primary action for the current tab. In `Transcription`, this starts transcription when available. In `Code`, this applies the current code to the selected text.
+- `Ctrl+.`: pause or resume an active transcription batch
+- `Esc`: cancel an active transcription job, or clear the current coding selection when you are on the `Code` tab
+
+Coding shortcuts:
+
+- `Ctrl+I`: import transcript text into the `Code` tab
+- `Ctrl+L`: jump to the code-name input box
+- `Ctrl+M`: jump to the memo field
+- `Ctrl+E`: toggle text-selection mode in the `Code` tab
+- `Ctrl+G`: apply the current code to the selected text
+- `Ctrl+Shift+G`: apply an existing code to the selected text
+- `Ctrl+Shift+M`: open the merge-codes dialog
+- `Ctrl+Shift+S`: export the current project
+- `Ctrl+Shift+I`: import a saved project
+- `F7`: jump to the previous transcript segment
+- `F8`: jump to the next transcript segment
+
+Search shortcut:
+
+- `F6`: open the `Records` tab and focus the search box
+
+Notes:
+
+- Segment navigation with `F7` and `F8` works best with transcripts that preserve timestamp blocks or paragraph-separated segments.
+- Coding shortcuts that apply a code require an active text selection in the transcript editor.
+
 ## Requirements
 
 - Windows, macOS, or Linux
