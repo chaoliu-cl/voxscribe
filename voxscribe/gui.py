@@ -31,6 +31,7 @@ if os.path.isdir(LOCAL_FASTER_WHISPER_PATH) and LOCAL_FASTER_WHISPER_PATH not in
 
 import json
 import re
+from html.parser import HTMLParser
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from collections import Counter, defaultdict
@@ -47,7 +48,17 @@ from PySide6.QtWidgets import (
     QInputDialog, QTreeWidget, QTreeWidgetItem, QScrollArea, QRadioButton
 )
 from PySide6.QtCore import Qt, Signal, QThread, QSize, QEvent, QTimer, QMutex, QMimeData
-from PySide6.QtGui import QFont, QColor, QPalette, QTextCursor, QTextCharFormat, QDrag
+from PySide6.QtGui import (
+    QFont,
+    QColor,
+    QPalette,
+    QTextCursor,
+    QTextCharFormat,
+    QDrag,
+    QAction,
+    QKeySequence,
+    QShortcut,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +277,20 @@ class CodeMemo:
         self.text = ""
         self.code = ""
         self.memo = ""
+
+
+class _AnnotationHTMLStripper(HTMLParser):
+    """Extract readable text from simple HTML snippets."""
+
+    def __init__(self):
+        super().__init__()
+        self._parts = []
+
+    def handle_data(self, data):
+        self._parts.append(data)
+
+    def get_text(self):
+        return "".join(self._parts)
 
 
 class CodeSelectionDialog(QDialog):
@@ -824,7 +849,8 @@ class BatchTranscriptionWorker(QThread):
         except Exception as e:
             logger.exception("Batch transcription failed")
             self.error.emit(str(e))
-    
+
+
     def _save_single_result(self, result):
         """Save a single transcription result"""
         if not result['success']:
@@ -904,6 +930,16 @@ class VoxScribeGUI(QMainWindow):
         self.current_text = ""
         self.worker = None
         self.selection_mode = False
+        self._shortcuts = []
+        self.analysis_figure = None
+        self.analysis_canvas = None
+        self.analysis_results = None
+        self.analysis_placeholder = None
+        self.comparison_figure = None
+        self.comparison_canvas = None
+        self.comparison_summary = None
+        self.comparison_placeholder = None
+        self.comparison_splitter = None
         
         self.text_display_font_size = 12
         
@@ -953,6 +989,7 @@ class VoxScribeGUI(QMainWindow):
         )
         self._lazy_tab_widgets["Comparison"] = comparison_placeholder
         self.tabs.addTab(comparison_placeholder, "Comparison")
+        self._register_shortcuts()
 
     def _create_lazy_tab_placeholder(self, message: str) -> QWidget:
         widget = QWidget()
@@ -994,6 +1031,151 @@ class VoxScribeGUI(QMainWindow):
                     child.setParent(None)
             layout.addWidget(widget)
         self._lazy_tab_builders.pop(tab_text, None)
+
+    def _bind_shortcut(self, key_sequence, handler):
+        shortcut = QShortcut(QKeySequence(key_sequence), self)
+        shortcut.activated.connect(handler)
+        self._shortcuts.append(shortcut)
+
+    def _register_shortcuts(self):
+        """Register application shortcuts for a keyboard-first workflow."""
+        for index in range(self.tabs.count()):
+            tab_number = index + 1
+            if tab_number <= 9:
+                self._bind_shortcut(f"Alt+{tab_number}", lambda idx=index: self.tabs.setCurrentIndex(idx))
+
+        self._bind_shortcut("Ctrl+Shift+O", self.browse_audio_file)
+        self._bind_shortcut("Ctrl+Enter", self._trigger_primary_action)
+        self._bind_shortcut("Ctrl+.", self._toggle_pause_resume_shortcut)
+        self._bind_shortcut("Ctrl+I", self.import_text)
+        self._bind_shortcut("Ctrl+L", self.focus_code_input)
+        self._bind_shortcut("Ctrl+M", self.focus_memo_input)
+        self._bind_shortcut("Ctrl+E", self.toggle_selection_shortcut)
+        self._bind_shortcut("Esc", self.handle_escape_shortcut)
+        self._bind_shortcut("Ctrl+G", self.apply_current_code_shortcut)
+        self._bind_shortcut("Ctrl+Shift+G", self.apply_existing_code_shortcut)
+        self._bind_shortcut("Ctrl+Shift+M", self.merge_codes_dialog)
+        self._bind_shortcut("F6", self.focus_records_search)
+        self._bind_shortcut("F7", self.jump_to_previous_segment)
+        self._bind_shortcut("F8", self.jump_to_next_segment)
+        self._bind_shortcut("Ctrl+Shift+S", self.export_project)
+        self._bind_shortcut("Ctrl+Shift+I", self.import_project)
+
+    def _trigger_primary_action(self):
+        current_tab = self.tabs.tabText(self.tabs.currentIndex())
+        if current_tab == "Transcription":
+            if self.process_button.isEnabled():
+                self.start_transcription()
+        elif current_tab == "Code":
+            self.apply_current_code_shortcut()
+
+    def _toggle_pause_resume_shortcut(self):
+        if self.pause_resume_button.isVisible() and self.pause_resume_button.isEnabled():
+            self.toggle_pause_resume()
+
+    def focus_code_input(self):
+        self.tabs.setCurrentIndex(self._find_tab_index("Code"))
+        self.code_input.setFocus()
+        self.code_input.lineEdit().selectAll()
+
+    def focus_memo_input(self):
+        self.tabs.setCurrentIndex(self._find_tab_index("Code"))
+        self.memo_input.setFocus()
+
+    def toggle_selection_shortcut(self):
+        code_tab_index = self._find_tab_index("Code")
+        self.tabs.setCurrentIndex(code_tab_index)
+        self.select_text_button.toggle()
+
+    def handle_escape_shortcut(self):
+        if self.tabs.tabText(self.tabs.currentIndex()) == "Code":
+            self.clear_selection()
+            if self.selection_mode:
+                self.select_text_button.setChecked(False)
+        elif self.pause_resume_button.isVisible() and self.worker:
+            self.cancel_processing()
+
+    def apply_current_code_shortcut(self):
+        if self.tabs.tabText(self.tabs.currentIndex()) != "Code":
+            self.tabs.setCurrentIndex(self._find_tab_index("Code"))
+
+        if self.coding_text.textCursor().hasSelection():
+            self.create_and_apply_code()
+        else:
+            self.code_input.setFocus()
+            self.code_status_label.setText("Select text, then press Ctrl+G to apply the current code")
+            self.code_status_label.setStyleSheet("color: #1976D2; font-weight: bold; padding: 5px;")
+
+    def apply_existing_code_shortcut(self):
+        self.tabs.setCurrentIndex(self._find_tab_index("Code"))
+        if self.coding_text.textCursor().hasSelection():
+            self.apply_existing_code()
+        else:
+            self.code_status_label.setText("Select text, then press Ctrl+Shift+G to choose an existing code")
+            self.code_status_label.setStyleSheet("color: #1976D2; font-weight: bold; padding: 5px;")
+
+    def focus_records_search(self):
+        self.tabs.setCurrentIndex(self._find_tab_index("Records"))
+        self.search_input.setFocus()
+        self.search_input.selectAll()
+
+    def _find_tab_index(self, tab_name):
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == tab_name:
+                return index
+        return 0
+
+    def _iter_segment_starts(self):
+        text = self.coding_text.toPlainText()
+        if not text:
+            return []
+
+        timestamp_matches = list(re.finditer(r"(?m)^\[[^\n]*->\s*[^\n]*\]\s*$", text))
+        if timestamp_matches:
+            return [match.start() for match in timestamp_matches]
+
+        paragraph_matches = [match.start(1) for match in re.finditer(r"(?m)(?:^|\n\n)(\S)", text)]
+        return paragraph_matches
+
+    def _jump_to_segment(self, direction):
+        segment_starts = self._iter_segment_starts()
+        if not segment_starts:
+            return
+
+        current_position = self.coding_text.textCursor().position()
+        target_position = None
+
+        if direction > 0:
+            for position in segment_starts:
+                if position > current_position:
+                    target_position = position
+                    break
+            if target_position is None:
+                target_position = segment_starts[-1]
+        else:
+            for position in reversed(segment_starts):
+                if position < current_position:
+                    target_position = position
+                    break
+            if target_position is None:
+                target_position = segment_starts[0]
+
+        cursor = self.coding_text.textCursor()
+        cursor.setPosition(target_position)
+        self.coding_text.setTextCursor(cursor)
+        self.coding_text.ensureCursorVisible()
+
+        segment_label = "next" if direction > 0 else "previous"
+        self.code_status_label.setText(f"Moved to {segment_label} segment")
+        self.code_status_label.setStyleSheet("color: #1976D2; font-weight: bold; padding: 5px;")
+
+    def jump_to_next_segment(self):
+        self.tabs.setCurrentIndex(self._find_tab_index("Code"))
+        self._jump_to_segment(1)
+
+    def jump_to_previous_segment(self):
+        self.tabs.setCurrentIndex(self._find_tab_index("Code"))
+        self._jump_to_segment(-1)
     
     def create_transcription_tab(self):
         """Create transcription tab with batch support and pause/resume"""
@@ -1166,6 +1348,12 @@ class VoxScribeGUI(QMainWindow):
         
         log_group.setLayout(log_layout)
         layout.addWidget(log_group)
+
+        shortcut_hint = QLabel(
+            "Shortcuts: Ctrl+Shift+O browse audio, Ctrl+Enter start, Ctrl+. pause/resume, Esc cancel"
+        )
+        shortcut_hint.setStyleSheet("color: #666; font-style: italic;")
+        layout.addWidget(shortcut_hint)
         
         return widget
     
@@ -1190,7 +1378,6 @@ class VoxScribeGUI(QMainWindow):
             return
         
         from PySide6.QtWidgets import QMenu
-        from PySide6.QtGui import QAction
         
         context_menu = QMenu(self)
         
@@ -1552,18 +1739,42 @@ class VoxScribeGUI(QMainWindow):
         left_layout.setSpacing(10)
         
         # Toolbar at top of left panel
-        toolbar_layout = QHBoxLayout()
-        toolbar_layout.setSpacing(5)
-        
+        toolbar_layout = QVBoxLayout()
+        toolbar_layout.setSpacing(6)
+
+        text_actions_layout = QHBoxLayout()
+        text_actions_layout.setSpacing(5)
+
         import_btn = QPushButton("Import Text")
         import_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
         import_btn.clicked.connect(self.import_text)
-        toolbar_layout.addWidget(import_btn)
-        
+        text_actions_layout.addWidget(import_btn)
+
         refresh_btn = QPushButton("Refresh")
         refresh_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
         refresh_btn.clicked.connect(self.refresh_text_display)
-        toolbar_layout.addWidget(refresh_btn)
+        text_actions_layout.addWidget(refresh_btn)
+        text_actions_layout.addStretch()
+        toolbar_layout.addLayout(text_actions_layout)
+
+        project_actions_layout = QHBoxLayout()
+        project_actions_layout.setSpacing(5)
+
+        project_label = QLabel("Project:")
+        project_label.setStyleSheet("font-weight: bold; color: #555;")
+        project_actions_layout.addWidget(project_label)
+
+        import_project_btn = QPushButton("Import")
+        import_project_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
+        import_project_btn.clicked.connect(self.import_project)
+        project_actions_layout.addWidget(import_project_btn)
+
+        export_project_btn = QPushButton("Export")
+        export_project_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
+        export_project_btn.clicked.connect(self.export_project)
+        project_actions_layout.addWidget(export_project_btn)
+        project_actions_layout.addStretch()
+        toolbar_layout.addLayout(project_actions_layout)
         
         left_layout.addLayout(toolbar_layout)
         
@@ -1624,7 +1835,6 @@ class VoxScribeGUI(QMainWindow):
         
         # Create export menu
         from PySide6.QtWidgets import QMenu
-        from PySide6.QtGui import QAction
         export_menu = QMenu(export_menu_btn)
         
         export_html_action = QAction("Export as HTML", self)
@@ -1660,7 +1870,9 @@ class VoxScribeGUI(QMainWindow):
             "1) Enable Selection<br>"
             "2) Select text on right<br>"
             "3) Create or Apply Code<br><br>"
-            "<i>Click code labels to remove</i>"
+            "<i>Shortcuts: Ctrl+E toggle selection, Ctrl+G apply current code, "
+            "Ctrl+Shift+G choose existing code, Ctrl+Shift+S export project, "
+            "Ctrl+Shift+I import project, F7/F8 jump segments, Esc clear selection</i>"
         )
         self.legend_label.setStyleSheet(
             "color: #666; "
@@ -2404,6 +2616,144 @@ class VoxScribeGUI(QMainWindow):
         self.coding_text.setTextCursor(cursor)
         self.code_status_label.setText("Selection cleared")
         self.code_status_label.setStyleSheet("color: #666; font-weight: normal; padding: 5px;")
+
+    def _build_project_payload(self):
+        return {
+            "project_type": "voxscribe_project",
+            "version": 1,
+            "saved_at": datetime.now().isoformat(),
+            "text": self.current_text,
+            "current_audio_path": self.current_audio_path,
+            "audio_paths": self.audio_paths,
+            "text_display_font_size": self.text_display_font_size,
+            "codes": sorted(self.annotation_manager.codes),
+            "code_colors": self.annotation_manager.code_colors,
+            "themes": self.annotation_manager.theme_root.to_dict(),
+            "annotations": [
+                {
+                    "start": ann.start,
+                    "end": ann.end,
+                    "text": ann.text,
+                    "code": ann.code,
+                    "memo": ann.memo,
+                }
+                for ann in sorted(self.annotation_manager.annotations, key=lambda a: (a.start, a.end, a.code))
+            ],
+        }
+
+    def export_project(self):
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Project",
+            "",
+            "VoxScribe Project Files (*.json)"
+        )
+        if not filepath:
+            return
+
+        try:
+            payload = self._build_project_payload()
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, ensure_ascii=False)
+            self.log_message(f"Project exported: {os.path.basename(filepath)}")
+            QMessageBox.information(self, "Success", f"Project exported successfully.\n\n{filepath}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to export project:\n{exc}")
+
+    def import_project(self):
+        filepath, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Project",
+            "",
+            "VoxScribe Project Files (*.json)"
+        )
+        if not filepath:
+            return
+
+        if self.current_text or self.annotation_manager.annotations or self.annotation_manager.codes:
+            reply = QMessageBox.question(
+                self,
+                "Replace Current Project",
+                "Importing a project will replace the current text, annotations, codes, and themes.\n\nContinue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
+
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            if payload.get("project_type") != "voxscribe_project":
+                raise ValueError("Selected file is not a VoxScribe project export")
+
+            self._restore_project_payload(payload)
+            self.log_message(f"Project imported: {os.path.basename(filepath)}")
+            QMessageBox.information(self, "Success", f"Project imported successfully.\n\n{filepath}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to import project:\n{exc}")
+
+    def _restore_project_payload(self, payload):
+        self.current_text = str(payload.get("text", ""))
+        self.current_audio_path = payload.get("current_audio_path")
+        self.audio_paths = list(payload.get("audio_paths", []))
+        self.text_display_font_size = int(payload.get("text_display_font_size", 12))
+
+        self.annotation_manager.annotations = []
+        self.annotation_manager.codes = set(payload.get("codes", []))
+        self.annotation_manager.code_colors = dict(payload.get("code_colors", {}))
+
+        for ann_data in payload.get("annotations", []):
+            ann = CodeMemo()
+            ann.start = self._safe_int(ann_data.get("start", 0))
+            ann.end = self._safe_int(ann_data.get("end", 0))
+            ann.text = str(ann_data.get("text", ""))
+            ann.code = str(ann_data.get("code", ""))
+            ann.memo = str(ann_data.get("memo", ""))
+            self.annotation_manager.annotations.append(ann)
+            if ann.code:
+                self.annotation_manager.codes.add(ann.code)
+
+        theme_data = payload.get("themes")
+        if isinstance(theme_data, dict):
+            self.annotation_manager.theme_root = ThemeNode.from_dict(theme_data)
+        else:
+            self.annotation_manager.theme_root = ThemeNode("Root", "theme", "Root of code hierarchy")
+
+        self.coding_text.setPlainText(self.current_text)
+        self.update_text_display_font()
+        self.update_code_dropdown()
+        self.update_codebook_table()
+        self.update_theme_tree()
+        self.update_records_table()
+        self.refresh_text_display()
+        self.ensure_no_selection()
+
+        if self.selection_mode:
+            self.select_text_button.setChecked(False)
+            self.toggle_selection_mode(False)
+
+        self.batch_file_list.clear()
+        if len(self.audio_paths) > 1:
+            for path in self.audio_paths:
+                self.batch_file_list.addItem(os.path.basename(path))
+
+        if self.current_audio_path:
+            self.file_path.setText(self.current_audio_path)
+            self.process_button.setEnabled(True)
+        elif self.audio_paths:
+            self.file_path.setText(f"{len(self.audio_paths)} files selected")
+            self.process_button.setEnabled(True)
+        else:
+            self.file_path.clear()
+            self.process_button.setEnabled(False)
+
+        self.code_status_label.setText(
+            f"Project loaded: {len(self.annotation_manager.annotations)} annotations, "
+            f"{len(self.annotation_manager.codes)} codes"
+        )
+        self.code_status_label.setStyleSheet("color: #2E7D32; font-weight: bold; padding: 5px;")
     
     def import_text(self):
         filepath, _ = QFileDialog.getOpenFileName(
@@ -3511,7 +3861,6 @@ class VoxScribeGUI(QMainWindow):
     # ===== Analysis Methods =====
     
     def create_analysis_tab(self):
-        _lazy_import_analysis_deps()
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
@@ -3544,22 +3893,46 @@ class VoxScribeGUI(QMainWindow):
         toolbar.addWidget(self.cooccur_unit)
         
         layout.addLayout(toolbar)
-        
-        self.analysis_figure = Figure(figsize=(10, 6))
-        self.analysis_canvas = FigureCanvasQTAgg(self.analysis_figure)
-        layout.addWidget(self.analysis_canvas)
-        
+
+        self.analysis_placeholder = QLabel(
+            "Charts load on demand. Run an analysis to initialize visualization components."
+        )
+        self.analysis_placeholder.setAlignment(Qt.AlignCenter)
+        self.analysis_placeholder.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
+        layout.addWidget(self.analysis_placeholder)
+
         self.analysis_results = QTextEdit()
         self.analysis_results.setReadOnly(True)
         self.analysis_results.setMaximumHeight(200)
         layout.addWidget(self.analysis_results)
         
         return widget
+
+    def _ensure_analysis_canvas(self):
+        if self.analysis_canvas is not None and self.analysis_figure is not None:
+            return
+
+        _lazy_import_analysis_deps()
+        self.analysis_figure = Figure(figsize=(10, 6))
+        self.analysis_canvas = FigureCanvasQTAgg(self.analysis_figure)
+
+        if self.analysis_placeholder is not None:
+            parent_layout = self.analysis_placeholder.parentWidget().layout()
+            index = parent_layout.indexOf(self.analysis_placeholder)
+            parent_layout.removeWidget(self.analysis_placeholder)
+            self.analysis_placeholder.deleteLater()
+            self.analysis_placeholder = None
+            parent_layout.insertWidget(index, self.analysis_canvas)
+        elif self.analysis_results is not None:
+            parent_layout = self.analysis_results.parentWidget().layout()
+            parent_layout.insertWidget(max(0, parent_layout.indexOf(self.analysis_results)), self.analysis_canvas)
     
     def show_code_frequency(self):
         if not self.annotation_manager.annotations:
             QMessageBox.warning(self, "Warning", "No annotations")
             return
+
+        self._ensure_analysis_canvas()
         
         code_counts = Counter(a.code for a in self.annotation_manager.annotations)
         
@@ -3591,6 +3964,8 @@ class VoxScribeGUI(QMainWindow):
         if len(self.annotation_manager.annotations) < 2:
             QMessageBox.warning(self, "Warning", "Need at least 2 annotations")
             return
+
+        self._ensure_analysis_canvas()
         
         codes = list(self.annotation_manager.codes)
         n = len(codes)
@@ -3817,9 +4192,10 @@ class VoxScribeGUI(QMainWindow):
             summary += f"Average Annotation Length: {avg_annotation_length:.1f} characters\n"
         
         self.analysis_results.setPlainText(summary)
-        
-        self.analysis_figure.clear()
-        self.analysis_canvas.draw()
+
+        if self.analysis_figure is not None and self.analysis_canvas is not None:
+            self.analysis_figure.clear()
+            self.analysis_canvas.draw()
 
     def show_coverage_analysis(self):
         """
@@ -3836,6 +4212,8 @@ class VoxScribeGUI(QMainWindow):
         if not self.annotation_manager.annotations:
             QMessageBox.warning(self, "Warning", "No annotations to analyze")
             return
+
+        self._ensure_analysis_canvas()
         
         # Calculate coverage metrics
         text_length = len(self.current_text)
@@ -4048,7 +4426,114 @@ class VoxScribeGUI(QMainWindow):
             summary += "   • If these represent truly complex passages\n"
         
         self.analysis_results.setPlainText(summary)
-    
+
+    def _safe_int(self, value, default=0):
+        try:
+            if value is None or value == "":
+                return default
+            return int(float(value))
+        except (TypeError, ValueError):
+            return default
+
+    def _extract_first_value(self, record, *keys, default=""):
+        for key in keys:
+            if key in record and record[key] not in (None, ""):
+                return record[key]
+
+        lowered = {str(k).lower(): v for k, v in record.items()}
+        for key in keys:
+            lowered_key = key.lower()
+            if lowered_key in lowered and lowered[lowered_key] not in (None, ""):
+                return lowered[lowered_key]
+
+        return default
+
+    def _strip_html_text(self, value):
+        if not isinstance(value, str) or "<" not in value:
+            return value if isinstance(value, str) else ""
+
+        parser = _AnnotationHTMLStripper()
+        parser.feed(value)
+        parser.close()
+        return parser.get_text()
+
+    def _normalize_annotation_records(self, raw_records):
+        normalized = []
+        for index, record in enumerate(raw_records, 1):
+            if not isinstance(record, dict):
+                continue
+
+            text = self._strip_html_text(str(self._extract_first_value(record, "text", "Text", default="")))
+            code = str(self._extract_first_value(record, "code", "Code", default=""))
+            memo = self._strip_html_text(str(self._extract_first_value(record, "memo", "Memo", default="")))
+            start = self._safe_int(self._extract_first_value(record, "start", "Start", "Start Position", default=0))
+            end = self._safe_int(self._extract_first_value(record, "end", "End", "End Position", default=start))
+            color = str(self._extract_first_value(record, "color", "Color", default="#FFFFFF"))
+
+            normalized.append({
+                "id": self._safe_int(self._extract_first_value(record, "id", "ID", default=index), default=index),
+                "start": start,
+                "end": end,
+                "text": text,
+                "code": code,
+                "memo": memo,
+                "color": color,
+                "length": len(text),
+            })
+
+        return [
+            record for record in normalized
+            if record["text"] or record["code"] or record["memo"] or record["start"] != 0 or record["end"] != 0
+        ]
+
+    def _load_annotation_file_data(self, filepath):
+        suffix = Path(filepath).suffix.lower()
+
+        if suffix == ".json":
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if isinstance(data, dict) and "annotations" in data:
+                data = data["annotations"]
+            elif isinstance(data, dict):
+                data = [data]
+
+            if not isinstance(data, list):
+                raise ValueError("Unsupported JSON structure")
+
+            normalized = self._normalize_annotation_records(data)
+            if not normalized:
+                raise ValueError("JSON file is not a VoxScribe annotation export")
+            return normalized
+
+        if suffix == ".csv":
+            with open(filepath, "r", encoding="utf-8-sig", newline="") as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames or []
+                lowered = {name.lower() for name in fieldnames}
+                if not {"text", "code", "memo", "start", "end", "start position", "end position"} & lowered:
+                    raise ValueError("CSV file is not a VoxScribe annotation export")
+                normalized = self._normalize_annotation_records(list(reader))
+                if not normalized:
+                    raise ValueError("CSV file has no searchable annotation records")
+                return normalized
+
+        if suffix == ".html":
+            with open(filepath, "r", encoding="utf-8") as f:
+                html_content = f.read()
+            if (
+                'meta name="generator" content="VoxScribe"' not in html_content
+                and 'class="annotation"' not in html_content
+                and 'application/json' not in html_content
+            ):
+                raise ValueError("HTML file is not a VoxScribe annotation export")
+            parsed = self._parse_html_annotations(html_content)
+            if not parsed:
+                raise ValueError("HTML file has no searchable annotation records")
+            return parsed
+
+        raise ValueError(f"Unsupported file format: {suffix}")
+
     # ===== Records Methods =====
     
     def create_records_tab(self):
@@ -4249,7 +4734,6 @@ class VoxScribeGUI(QMainWindow):
     # ===== Comparison Methods =====
     
     def create_comparison_tab(self):
-        _lazy_import_analysis_deps()
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
@@ -4295,10 +4779,14 @@ class VoxScribeGUI(QMainWindow):
         layout.addLayout(control_layout)
         
         splitter = QSplitter(Qt.Orientation.Vertical)
-        
-        self.comparison_figure = Figure(figsize=(10, 4))
-        self.comparison_canvas = FigureCanvasQTAgg(self.comparison_figure)
-        splitter.addWidget(self.comparison_canvas)
+        self.comparison_splitter = splitter
+
+        self.comparison_placeholder = QLabel(
+            "Comparison charts load on demand. Load two files and click Run Comparison."
+        )
+        self.comparison_placeholder.setAlignment(Qt.AlignCenter)
+        self.comparison_placeholder.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
+        splitter.addWidget(self.comparison_placeholder)
         
         self.comparison_summary = QTextEdit()
         self.comparison_summary.setReadOnly(True)
@@ -4309,13 +4797,27 @@ class VoxScribeGUI(QMainWindow):
         self.comparison_data = [None, None]
         
         return widget
+
+    def _ensure_comparison_canvas(self):
+        if self.comparison_canvas is not None and self.comparison_figure is not None:
+            return
+
+        _lazy_import_analysis_deps()
+        self.comparison_figure = Figure(figsize=(10, 4))
+        self.comparison_canvas = FigureCanvasQTAgg(self.comparison_figure)
+
+        if self.comparison_placeholder is not None and self.comparison_splitter is not None:
+            index = self.comparison_splitter.indexOf(self.comparison_placeholder)
+            self.comparison_placeholder.setParent(None)
+            self.comparison_splitter.insertWidget(max(0, index), self.comparison_canvas)
+            self.comparison_placeholder.deleteLater()
+            self.comparison_placeholder = None
     
     def load_comparison_file(self, file_num):
         """
         Load comparison file - supports JSON, CSV, and HTML with annotations
         HTML files should be in the format saved by 'Save Annotated Text' button
         """
-        _lazy_import_analysis_deps()
         filepath, _ = QFileDialog.getOpenFileName(
             self, f"Load File {file_num}", "", 
             "All Supported Files (*.json *.csv *.html);;JSON Files (*.json);;CSV Files (*.csv);;HTML Files (*.html);;All Files (*.*)"
@@ -4325,33 +4827,13 @@ class VoxScribeGUI(QMainWindow):
             return
         
         try:
-            if filepath.endswith('.json'):
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                
-                # Check if it's the annotated text format (with 'text' and 'annotations' keys)
-                if isinstance(data, dict) and 'annotations' in data:
-                    # Convert to list format for comparison
-                    data = data['annotations']
-                
-            elif filepath.endswith('.csv'):
-                df = pd.read_csv(filepath)
-                data = df.to_dict('records')
-                
-            elif filepath.endswith('.html'):
-                # Parse HTML file to extract annotations
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-                
-                # Extract annotations from HTML
-                data = self._parse_html_annotations(html_content)
-                
-                if not data:
-                    QMessageBox.warning(self, "Warning", 
-                        "No annotations found in HTML file. Make sure it's a file saved from the 'Save Annotated Text' feature.")
-                    return
-            else:
-                QMessageBox.warning(self, "Warning", "Unsupported format")
+            data = self._load_annotation_file_data(filepath)
+            if not data:
+                QMessageBox.warning(
+                    self,
+                    "Warning",
+                    "No annotations found in this file. Make sure it is a VoxScribe export or records export.",
+                )
                 return
             
             self.comparison_data[file_num - 1] = data
@@ -4497,6 +4979,7 @@ class VoxScribeGUI(QMainWindow):
 
     def _generate_comparison_chart(self):
         """Generate comparison chart based on selected visualization type"""
+        self._ensure_comparison_canvas()
         data1, data2 = self.comparison_data
         
         # Count code frequencies
